@@ -1,2 +1,2 @@
-main::IO()
+main :: IO()
 main = print "Hello world!"
