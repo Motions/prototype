@@ -45,9 +45,30 @@ createRandomDelta = undefined
 energyFromDelta :: Move -> State SimulationState Double
 energyFromDelta = undefined
 
+moveParticle :: Vector3 -> Vector3 -> Space -> Space
+moveParticle from to space = M.insert to (space M.! from) $ M.delete from space
 
 applyDelta :: Move -> State SimulationState ()
-applyDelta = undefined
+applyDelta (MoveBinder number delta) = do
+  state <- get
+  let current = (binders state) V.! number
+  energy_from_delta <- energyFromDelta (MoveBinder number delta)
+  put SimulationState{
+    space = moveParticle current (current + delta) (space state),
+    binders = (binders state) V.// [(number, current + delta)],
+    beads = beads state,
+    energy = (energy state) + (energy_from_delta),
+    Types.random = (Types.random state)}
+applyDelta (MoveBead number delta) = do
+  state <- get
+  let current = (beads state) V.! number
+  energy_from_delta <- energyFromDelta (MoveBead number delta)
+  put SimulationState{
+    space = moveParticle current (current + delta) (space state),
+    binders = binders state,
+    beads = (beads state) // [(number, current + delta)],
+    energy = (energy state) + (energy_from_delta),
+    Types.random = (Types.random state)}
 
 simulateStep :: State SimulationState ()
 simulateStep = do
