@@ -9,9 +9,10 @@ import Types
 
 spherePoints :: Double -> [Vector3]
 spherePoints radius = do
-  let r = ((ceiling radius)::Int) + 1
+  let r = ((ceiling radius)::Int) + 2
   x <- [-r .. r]
-  y <- [-r .. r]
+  let y_max = ceiling $ sqrt $ (radius + 2)^2 - (fromIntegral x^2)
+  y <- [-y_max .. y_max]
   return (x,y)
   let z_square_min = (radius - 2)^2 - (fromIntegral (x^2 + y^2))
   let z_square_max = (radius + 2)^2 - (fromIntegral (x^2 + y^2))
