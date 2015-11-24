@@ -36,11 +36,10 @@ getRandFromVec vec = do
 
 spherePoints :: Double -> [Vector3]
 spherePoints radius = do
-  let r = (ceiling radius :: Int) + 2
+  let r = (ceiling radius::Int) + 2
   x <- [-r .. r]
   let y_max = ceiling $ sqrt $ (radius + 2)^2 - (fromIntegral x^2)
   y <- [-y_max .. y_max]
-  return (x, y)
   let z_square_min = (radius - 2)^2 - fromIntegral (x^2 + y^2)
   let z_square_max = (radius + 2)^2 - fromIntegral (x^2 + y^2)
   let lower_bound = if z_square_min < 0 then 0 else ceiling $ sqrt z_square_min
@@ -53,12 +52,21 @@ genSpace :: Double -> Space
 genSpace radius =
     foldr (\cords -> M.insert (middle + cords) Lamina) M.empty (spherePoints radius)
         where
-            middle_point = ceiling radius `div` 2
+            middle_point = 0
             middle = V3 middle_point middle_point middle_point
 
+fillGaps :: Int -> [(Int, Atom)] -> [Atom]
+fillGaps _ [] = []
+fillGaps x ((y, a):tl) | x == y = a : fillGaps (x+1) tl
+fillGaps x l = NormBead : fillGaps (x+1) l
 
-loadChain :: FilePath -> FilePath -> IO [Atom]
-loadChain laminBS binderBS = undefined
+loadChain :: Int -> FilePath -> FilePath -> IO [Atom]
+loadChain length laminBS binderBS = do
+  laminBSs <- flip Data.List.zip (repeat LBBead) . Data.List.map (read::(String->Int)) . lines <$> readFile laminBS
+  binderBSs <- flip Data.List.zip  (repeat BBBead) . Data.List.map (read::(String->Int)) . lines <$> readFile binderBS
+  let indexed_bss = sortBy (\(x,_) (y,_) -> compare x y) $ laminBSs Data.List.++ binderBSs Data.List.++ [(length + 1, NormBead)]
+  return $ Data.List.init $ fillGaps 1 indexed_bss
+
 
 recalculateEnergy :: SimulationState -> SimulationState
 recalculateEnergy state = state { energy = V.sum $ (V.map <$> (localEnergy . space) <*> beads) state }
@@ -238,8 +246,8 @@ simulate = flip replicateM_ simulateStep
 
 main :: IO ()
 main = do
-        [laminFile, binderFile, r, numBinders, steps] <- getArgs
-        chain <- loadChain laminFile binderFile
+        [chain_length, laminFile, binderFile, r, numBinders, steps] <- getArgs
+        chain <- loadChain (read chain_length) laminFile binderFile
         let radius = read r
             space = genSpace radius
         randGen <- newStdGen
