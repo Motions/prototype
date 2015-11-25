@@ -24,6 +24,7 @@ executable zpp-prototype
                        containers,
                        random,
                        mtl,
-                       vector
+                       vector,
+                       transformers
   -- hs-source-dirs:      
   default-language:    Haskell2010

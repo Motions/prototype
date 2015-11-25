@@ -21,7 +21,7 @@ data SimulationState = SimulationState {
                      binders :: V.Vector Vector3,
                      beads :: V.Vector Vector3,
                      energy :: Double,
-                     random :: StdGen }
+                     randgen :: StdGen }
 
 instance Show SimulationState where
         show SimulationState{..} = unlines [
