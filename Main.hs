@@ -10,11 +10,9 @@ import Linear
 
 import Types
 
-atomMoves :: [Vector3]
-atomMoves = [V3 x y z | list@[x,y,z] <- replicateM 3 [-1,0,1], sum (map abs list) `elem` [1,2,3]]
-
-atomMovesLen :: Int
-atomMovesLen = length atomMoves
+atomMoves :: V.Vector Vector3
+atomMoves = V.fromList [V3 x y z | list@[x,y,z] <- replicateM 3 [-1,0,1],
+                                                   sum (map abs list) `elem` [1,2,3]]
 
 getRandWith :: (StdGen -> (a, StdGen)) -> State SimulationState a
 getRandWith func = do
@@ -29,6 +27,12 @@ getRand = getRandWith random
 
 getRandRange :: Random a => (a, a) -> State SimulationState a
 getRandRange range = getRandWith $ randomR range
+
+getRandFromVec :: V.Vector a -> State SimulationState a
+getRandFromVec vec = do
+        ix <- getRandRange (0, length vec - 1)
+        return $ vec V.! ix
+
 
 spherePoints :: Double -> [Vector3]
 spherePoints radius = do
@@ -53,14 +57,54 @@ genSpace radius =
             middle = V3 middle_point middle_point middle_point
 
 
-loadChain :: FilePath -> FilePath -> IO (V.Vector Atom)
+loadChain :: FilePath -> FilePath -> IO [Atom]
 loadChain laminBS binderBS = undefined
 
 recalculateEnergy :: SimulationState -> SimulationState
 recalculateEnergy state = state { energy = V.sum $ (V.map <$> (localEnergy . space) <*> beads) state }
 
-genSimState :: (RandomGen g) => g -> Int -> V.Vector Atom -> Space -> SimulationState
-genSimState randGen numBinders beads space = undefined
+genSimState :: StdGen -> Double -> Int -> [Atom] -> Space -> SimulationState
+genSimState randGen radius numBinders (b:beads) space =
+        let fstBead = V3 0 0 0
+            st = SimulationState (M.insert fstBead b space) V.empty (V.singleton fstBead) 0 randGen
+            st' = genBeads beads st
+            st'' = genBinders radius numBinders st'
+        in recalculateEnergy st''
+
+genBeads :: [Atom] -> SimulationState -> SimulationState
+genBeads [] st = st
+genBeads (b:bs) st@(SimulationState space binders beads energy randGen) =
+        let (pos, newRandGen) = tryGen 100 randGen
+            newSpace = M.insert pos b space
+            newBeads = V.snoc beads pos
+        in genBeads bs (SimulationState newSpace binders newBeads energy newRandGen)
+    where tryGen 0 _ = error "Unable to find initialization"
+          tryGen n gen =
+              let (ix, gen') = randomR (0, length atomMoves - 1) gen
+                  delta = atomMoves V.! ix
+                  lastPos = V.last beads
+                  newPos = lastPos + delta
+              in if collides newPos st || intersectsChain lastPos newPos st
+                     then tryGen (n - 1) gen'
+                     else (newPos, gen')
+
+genBinders :: Double -> Int -> SimulationState -> SimulationState
+genBinders radius n st = flip execState st $ replicateM_ n $ tryGen 100
+    where tryGen :: Int -> State SimulationState ()
+          tryGen 0 = fail "Unable to find initialization"
+          tryGen n = do
+              x <- getRandRange (-r, r)
+              y <- getRandRange (-r, r)
+              z <- getRandRange (-r, r)
+              let v = V3 x y z
+                  d = dist v (V3 0 0 0)
+              st <- get
+              if d > fromIntegral (r - 2) || collides v st
+                  then tryGen (n - 1)
+                  else let space' = M.insert v Binder $ space st
+                           binders' = V.snoc (binders st) v
+                       in put st { space = space', binders = binders' }
+          r = ceiling radius :: Int
 
 
 createRandomDelta :: MaybeT (State SimulationState) Move
@@ -68,27 +112,58 @@ createRandomDelta = do
         moveBinder <- lift getRand
         atoms <- gets $ if moveBinder then binders else beads
         atomIx <- lift $ getRandRange (0, length atoms - 1)
-        whichMove <- lift $ getRandRange (0, atomMovesLen - 1)
-        let delta = atomMoves !! whichMove
-            move = (if moveBinder then MoveBinder else MoveBead) atomIx delta
+        delta <- lift $ getRandFromVec atomMoves
+        let move = (if moveBinder then MoveBinder else MoveBead) atomIx delta
         st <- get
-        guard $ not $ collides move st
+        guard $ not $ moveCollides move st
         if moveBinder
             then return move
-            else do guard $ not $ breaksChain move st
-                    guard $ not $ intersectsChain move st
+            else do guard $ not $ moveBreaksChain move st
+                    guard $ not $ moveIntersectsChain move st
                     return move
 
+collides :: Vector3 -> SimulationState -> Bool
+collides pos = M.member pos . space
 
-collides :: Move -> SimulationState -> Bool
-collides (MoveBinder ix delta) st =
+intersectsChain :: Vector3 -> Vector3 -> SimulationState -> Bool
+intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st =
+        let d = dist b1 b2 -- assume 0 < d <= sqrt 2
+        in d == 1 || (let crossPositions =
+                              case (x1 == x2, y1 == y2, z1 == z2) of
+                                  (True, _, _) -> (V3 x1 y1 z2, V3 x1 y2 z1)
+                                  (_, True, _) -> (V3 x1 y1 z2, V3 x2 y1 z1)
+                                  (_, _, True) -> (V3 x1 y2 z1, V3 x2 y1 z1)
+                                  (_, _, _   ) -> error "d > sqrt 2"
+                      in areChainNeighbors crossPositions)
+    where areChainNeighbors (fstPos, sndPos) =
+              let (a1, a2) = (M.lookup fstPos (space st), M.lookup sndPos (space st))
+                  chainAtoms = [Just NormBead, Just LBBead, Just BBBead]
+              in all (`elem` chainAtoms) [a1, a2]
+                 && (let chain = beads st
+                     in case V.elemIndex fstPos chain of
+                            Nothing -> error "bead in space but not in chain"
+                            Just ix -> sndPos `elem` [chain V.! (ix - 1) | ix > 0]
+                                                  ++ [chain V.! (ix + 1) | ix < length chain - 1])
+
+moveCollides :: Move -> SimulationState -> Bool
+moveCollides (MoveBinder ix delta) st =
         let binderPos = (V.! ix) . binders $ st
             newPos = binderPos + delta
-        in M.member newPos . space $ st
-collides (MoveBead ix delta) st =
+        in collides newPos st
+moveCollides (MoveBead ix delta) st =
         let beadPos = (V.! ix) . beads $ st
             newPos = beadPos + delta
-        in M.member newPos . space $ st
+        in collides newPos st
+
+moveBreaksChain :: Move -> SimulationState -> Bool
+moveBreaksChain (MoveBinder _ _) _ = False
+moveBreaksChain move@(MoveBead ix delta) st = any badNeighbors $ localNeighbors move st
+    where badNeighbors (b1, b2) = let d = dist b1 b2 in d <= 0 || d > sqrt 2
+
+moveIntersectsChain :: Move -> SimulationState -> Bool
+moveIntersectsChain (MoveBinder _ _) _ = False
+moveIntersectsChain move@(MoveBead ix delta) st =
+        any (\(b1, b2) -> intersectsChain b1 b2 st) $ localNeighbors move st
 
 localNeighbors :: Move -> SimulationState -> [(Vector3, Vector3)]
 localNeighbors (MoveBinder _ _) _ = []
@@ -99,34 +174,6 @@ localNeighbors (MoveBead ix delta) st =
                       ++ [(chain V.! ix) + delta]
                       ++ [chain V.! (ix + 1) | ix < chainLen - 1]
         in zip localBeads (tail localBeads)
-
-breaksChain :: Move -> SimulationState -> Bool
-breaksChain (MoveBinder _ _) _ = False
-breaksChain move@(MoveBead ix delta) st = all goodNeighbor $ localNeighbors move st
-    where goodNeighbor (b1, b2) = let d = dist b1 b2 in d > 0 && d <= sqrt 2
-
-
-intersectsChain :: Move -> SimulationState -> Bool
-intersectsChain (MoveBinder _ _) _ = False
-intersectsChain move@(MoveBead ix delta) st = all goodNeighbor $ localNeighbors move st
-    where goodNeighbor (b1@(V3 x1 y1 z1), b2@(V3 x2 y2 z2)) =
-              let d = dist b1 b2 -- assume prior (not . breaksChain) check, i. e. 0 < d <= sqrt 2
-              in d == 1 || (let crossPositions =
-                                    case (x1 == x2, y1 == y2, z1 == z2) of
-                                        (True, _, _) -> (V3 x1 y1 z2, V3 x1 y2 z1)
-                                        (_, True, _) -> (V3 x1 y1 z2, V3 x2 y1 z1)
-                                        (_, _, True) -> (V3 x1 y2 z1, V3 x2 y1 z1)
-                                        (_, _, _   ) -> error "d > sqrt 2"
-                            in areChainNeighbors crossPositions)
-          areChainNeighbors (fstPos, sndPos) =
-              let (a1, a2) = (M.lookup fstPos (space st), M.lookup sndPos (space st))
-                  chainAtoms = [Just NormBead, Just LBBead, Just BBBead]
-              in all (`elem` chainAtoms) [a1, a2]
-                 && (let chain = beads st
-                     in case V.elemIndex fstPos chain of
-                            Nothing -> error "bead in space but not in chain"
-                            Just ix -> sndPos `elem` [chain V.! (ix - 1) | ix > 0]
-                                                  ++ [chain V.! (ix + 1) | ix < length chain - 1])
 
 dist :: Vector3 -> Vector3 -> Double
 dist u v = sqrt $ fromIntegral $ qd u v
@@ -193,8 +240,9 @@ main :: IO ()
 main = do
         [laminFile, binderFile, r, numBinders, steps] <- getArgs
         chain <- loadChain laminFile binderFile
-        let space = genSpace $ read r
+        let radius = read r
+            space = genSpace radius
         randGen <- newStdGen
-        let state = genSimState randGen (read numBinders) chain space
-        let ret = execState (simulate (read steps)) state
+        let state = genSimState randGen radius (read numBinders) chain space
+            ret = execState (simulate (read steps)) state
         print ret
