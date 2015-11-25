@@ -2,8 +2,8 @@
 module Types where
 
 import System.Random
-import Data.Map as M
-import Data.Vector as V
+import qualified Data.Map as M
+import qualified Data.Vector as V
 import Linear as Lin
 
 data Atom = NormBead | LBBead | BBBead | Lamina | Binder
