@@ -7,6 +7,7 @@ import Control.Monad.State
 import Control.Monad.Trans.Maybe
 import qualified Data.Map as M
 import Linear
+import Data.Ord
 
 import Types
 
@@ -62,10 +63,10 @@ fillGaps x l = NormBead : fillGaps (x+1) l
 
 loadChain :: Int -> FilePath -> FilePath -> IO [Atom]
 loadChain length laminBS binderBS = do
-  laminBSs <- flip Data.List.zip (repeat LBBead) . Data.List.map (read::(String->Int)) . lines <$> readFile laminBS
-  binderBSs <- flip Data.List.zip  (repeat BBBead) . Data.List.map (read::(String->Int)) . lines <$> readFile binderBS
-  let indexed_bss = sortBy (\(x,_) (y,_) -> compare x y) $ laminBSs Data.List.++ binderBSs Data.List.++ [(length + 1, NormBead)]
-  return $ Data.List.init $ fillGaps 1 indexed_bss
+  laminBSs <- flip zip (repeat LBBead) . map read . lines <$> readFile laminBS
+  binderBSs <- flip zip  (repeat BBBead) . map read . lines <$> readFile binderBS
+  let indexed_bss = sortBy (comparing fst) $ laminBSs ++ binderBSs ++ [(length + 1, NormBead)]
+  return $ init $ fillGaps 1 indexed_bss
 
 
 recalculateEnergy :: SimulationState -> SimulationState
