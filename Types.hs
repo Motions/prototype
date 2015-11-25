@@ -4,15 +4,12 @@ module Types where
 import System.Random
 import Data.Map as M
 import Data.Vector as V
+import Linear as Lin
 
 data Atom = NormBead | LBBead | BBBead | Lamina | Binder
           deriving (Eq, Show)
 
-data Vector3 = Vector3 Int Int Int
-             deriving (Eq, Show, Ord)
-instance Num Vector3 where
-        --- TODO
-        --
+type Vector3 = Lin.V3 Int
 
 type Space = M.Map Vector3 Atom
 
