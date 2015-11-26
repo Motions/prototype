@@ -246,16 +246,13 @@ simulateStep = gets energy >>= selectMove >>= applyDelta
                     r <- gets (energyFromDelta m) >>= checkE oldEnergy
                     if r then return m
                          else loop
-        findDelta = liftM fromJust $ iterateWhile isNothing $ runMaybeT createRandomDelta
-        -- TODO zastanowić się: stałe numeryczne (_DELTA) się typują na Double, bo MonomorphismRestriction
-        -- albo wyłączamy, albo wymuszamy Double.
-        {-checkE :: (Floating f) => f -> f -> State SimulationState Bool-}
+        findDelta = untilJust $ runMaybeT createRandomDelta
         checkE oldEnergy newEnergy
             | newEnergy >= oldEnergy = return True
             | otherwise = do
                 r <- getRandRange (0, 1)
-                return $ r < exp (newEnergy - oldEnergy) * _DELTA
-        _DELTA = 2 :: Double
+                return $ r < exp ((newEnergy - oldEnergy) * _DELTA)
+        _DELTA = 2
 
 
 simulate :: Int -> State SimulationState ()
