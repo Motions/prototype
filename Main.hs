@@ -1,8 +1,10 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, RecordWildCards, OverloadedStrings #-}
 import System.Random
 import System.Environment
+import System.IO
 import Data.Maybe
 import Data.List
+import Data.Foldable
 import qualified Data.Vector as V
 import Control.Monad.State
 import Control.Monad.Trans.Maybe
@@ -10,12 +12,16 @@ import Control.Monad.Loops
 import qualified Data.Map as M
 import Linear
 import Data.Ord
+import qualified Debug.Trace as DT
+import qualified Bio.PDB.EventParser.PDBEvents as PE
+import qualified Bio.PDB.EventParser.PDBEventPrinter as PP
+import qualified Data.ByteString.Char8 as BS
 
 import Types
 
 atomMoves :: V.Vector Vector3
 atomMoves = V.fromList [V3 x y z | list@[x,y,z] <- replicateM 3 [-1,0,1],
-                                                   sum (map abs list) `elem` [1,2,3]]
+                                                   sum (map abs list) `elem` [1,2]]
 
 getRandWith :: (StdGen -> (a, StdGen)) -> State SimulationState a
 getRandWith func = do
@@ -135,6 +141,8 @@ collides :: Vector3 -> SimulationState -> Bool
 collides pos = M.member pos . space
 
 intersectsChain :: Vector3 -> Vector3 -> SimulationState -> Bool
+{-intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st-}
+    {-| DT.trace ("asdf " ++ show b1 ++ " " ++ show b2 ++ "\n" ++ show st) False = undefined-}
 intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st =
         let d = dist b1 b2 -- assume 0 < d <= sqrt 2
         in d == 1 || (let crossPositions =
@@ -170,6 +178,8 @@ moveBreaksChain move@(MoveBead ix delta) st = any badNeighbors $ localNeighbors 
     where badNeighbors (b1, b2) = let d = dist b1 b2 in d <= 0 || d > sqrt 2
 
 moveIntersectsChain :: Move -> SimulationState -> Bool
+{-moveIntersectsChain move _-}
+    {-| DT.trace ("moveIntersectsChain " ++ show move) False = undefined-}
 moveIntersectsChain (MoveBinder _ _) _ = False
 moveIntersectsChain move@(MoveBead ix delta) st =
         any (\(b1, b2) -> intersectsChain b1 b2 st) $ localNeighbors move st
@@ -257,13 +267,46 @@ simulateStep = gets energy >>= selectMove >>= applyDelta
 simulate :: Int -> State SimulationState ()
 simulate = flip replicateM_ simulateStep
 
-main :: IO ()
-main = do
-        [chain_length, laminFile, binderFile, r, numBinders, steps] <- getArgs
+-- TODO CONECT
+writePDB :: Handle -> SimulationState -> IO ()
+writePDB handle SimulationState{..} = writeHeader >> doWrite beads >> doWrite binders
+        where writeHeader = PP.print handle (PE.HEADER "aa" "bb" "cc") >>   --TODO
+                            PP.print handle (PE.TITLE 0 "TODO")    --title jako argument?
+              doWrite = mapM_ (PP.print handle . atomMap) . getAtoms 
+              getAtoms :: V.Vector Vector3 -> [(Int, Vector3, Atom)]
+              getAtoms = zipWith (\i pos -> (i, pos, space M.! pos)) [0..] . toList
+              atomMap (i, V3 x y z, atom) = PE.ATOM {
+                  no = i,
+                  atomtype = getName atom,
+                  restype = getRes atom,
+                  chain = ' ', --na pewno puste
+                  resid = i, --oni tu mają drugi raz at_nr, trochę dziwnie
+                  resins = ' ', --chyba
+                  altloc = ' ', --na pewno puste
+                  coords = PE.Vector3 (fromIntegral x) (fromIntegral y) (fromIntegral z),
+                  occupancy = 0,  --to i następne to te 2 zera u nich na końcu
+                  bfactor = 0,  --to jest 'tempFactor' z PDB spec, ustawiają
+                  segid = "",   --te 3 rzeczy u nich w ogóle nie istnieją
+                  elt = "",
+                  charge = "",
+                  hetatm = False --musi być false
+                  }
+              getName _ = "C" --TODO
+              getRes BBBead = "BOU"
+              getRes LBBead = "LAM"
+              getRes Binder = "BIN"
+              getRes NormBead = "UNB" -- chyba?
+              getRes _ = error "getRes binder type"
+
+main = getArgs >>= main2
+
+main2 :: [String] -> IO ()
+main2 args = do
+        let [chain_length, laminFile, binderFile, r, numBinders, steps] = args
         chain <- loadChain (read chain_length) laminFile binderFile
         let radius = read r
             space = genSpace radius
         randGen <- newStdGen
         let state = genSimState randGen radius (read numBinders) chain space
             ret = execState (simulate (read steps)) state
-        print ret
+        writePDB stdout ret
