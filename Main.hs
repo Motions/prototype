@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 import System.Random
 import System.Environment
 import Data.Maybe
@@ -50,11 +51,7 @@ spherePoints radius = do
   return $ V3 x y z
 
 genSpace :: Double -> Space
-genSpace radius =
-    foldr (\cords -> M.insert (middle + cords) Lamina) M.empty (spherePoints radius)
-        where
-            middle_point = 0
-            middle = V3 middle_point middle_point middle_point
+genSpace radius = M.fromList $ map (,Lamina) $ spherePoints radius
 
 fillGaps :: Int -> [(Int, Atom)] -> [Atom]
 fillGaps _ [] = []
@@ -63,10 +60,12 @@ fillGaps x l = NormBead : fillGaps (x+1) l
 
 loadChain :: Int -> FilePath -> FilePath -> IO [Atom]
 loadChain length laminBS binderBS = do
-  laminBSs <- flip zip (repeat LBBead) . map read . lines <$> readFile laminBS
-  binderBSs <- flip zip  (repeat BBBead) . map read . lines <$> readFile binderBS
+  laminBSs <- makeAtoms LBBead <$> readFile laminBS
+  binderBSs <- makeAtoms BBBead <$> readFile binderBS
   let indexed_bss = sortBy (comparing fst) $ laminBSs ++ binderBSs ++ [(length + 1, NormBead)]
   return $ init $ fillGaps 1 indexed_bss
+  where
+    makeAtoms typ = flip zip (repeat typ) . map read . lines
 
 
 recalculateEnergy :: SimulationState -> SimulationState
@@ -106,7 +105,7 @@ genBinders radius n st = flip execState st $ replicateM_ n $ tryGen 100
               y <- getRandRange (-r, r)
               z <- getRandRange (-r, r)
               let v = V3 x y z
-                  d = dist v (V3 0 0 0)
+                  d = dist v zero
               st <- get
               if d > fromIntegral (r - 2) || collides v st
                   then tryGen (n - 1)
