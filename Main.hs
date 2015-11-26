@@ -242,17 +242,15 @@ simulateStep = gets energy >>= selectMove >>= applyDelta
         selectMove oldEnergy = loop
             where loop = do
                     m <- findDelta
-                    r <- gets (energyFromDelta m) >>= checkE oldEnergy
+                    r <- gets (energyFromDelta m) >>= checkE
                     if r then return m
                          else loop
         findDelta = untilJust $ runMaybeT createRandomDelta
-        checkE oldEnergy diff
-            | newEnergy >= oldEnergy = return True
+        checkE diff
+            | diff >= 0 = return True
             | otherwise = do
                 r <- getRandRange (0, 1)
-                return $ r < exp ((newEnergy - oldEnergy) * _DELTA)
-            where
-              newEnergy = oldEnergy + diff
+                return $ r < exp (diff * _DELTA)
         _DELTA = 2
 
 
