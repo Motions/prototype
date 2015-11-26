@@ -6,10 +6,10 @@ import Data.Maybe
 import Data.List
 import Data.Foldable
 import qualified Data.Vector as V
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Control.Monad.Trans.Maybe
 import Control.Monad.Loops
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import Linear
 import Data.Ord
 import qualified Debug.Trace as DT
