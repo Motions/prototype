@@ -6,6 +6,7 @@ import Data.List
 import qualified Data.Vector as V
 import Control.Monad.State
 import Control.Monad.Trans.Maybe
+import Control.Monad.Loops
 import qualified Data.Map as M
 import Linear
 import Data.Ord
@@ -236,10 +237,22 @@ applyDelta (MoveBead number delta) = do
     randgen = randgen state}
 
 simulateStep :: State SimulationState ()
-simulateStep = do
-        Just d <- runMaybeT createRandomDelta -- TODO
-        e <- gets $ energyFromDelta d
-        return () -- TODO
+simulateStep = gets energy >>= selectMove >>= applyDelta
+    where
+        selectMove oldEnergy = loop
+            where loop = do
+                    m <- findDelta
+                    r <- gets (energyFromDelta m) >>= checkE oldEnergy
+                    if r then return m
+                         else loop
+        findDelta = untilJust $ runMaybeT createRandomDelta
+        checkE oldEnergy newEnergy
+            | newEnergy >= oldEnergy = return True
+            | otherwise = do
+                r <- getRandRange (0, 1)
+                return $ r < exp ((newEnergy - oldEnergy) * _DELTA)
+        _DELTA = 2
+
 
 simulate :: Int -> State SimulationState ()
 simulate = flip replicateM_ simulateStep
