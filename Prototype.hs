@@ -256,14 +256,15 @@ simulateStep = selectMove >>= applyDelta
 simulate :: Int -> State SimulationState ()
 simulate = flip replicateM_ simulateStep
 
--- TODO CONECT
 writePDB :: Handle -> SimulationState -> IO ()
-writePDB handle SimulationState{..} = writeHeader >> doWrite beads >> doWrite binders
+writePDB handle SimulationState{..} =
+    writeHeader >> doWrite 0 beads >> doWrite chainLen binders >> writeConect (chainLen - 1)
         where writeHeader = PP.print handle (PE.HEADER "aa" "bb" "cc") >>   --TODO
                             PP.print handle (PE.TITLE 0 "TODO")    --title jako argument?
-              doWrite = mapM_ (PP.print handle . atomMap) . getAtoms 
-              getAtoms :: V.Vector Vector3 -> [(Int, Vector3, Atom)]
-              getAtoms = zipWith (\i pos -> (i, pos, space M.! pos)) [0..] . toList
+              writeConect n = traverse_ (\i -> PP.print handle $ PE.CONECT [i, i+1]) [1..n]
+              doWrite offset = traverse_ (PP.print handle . atomMap) . getAtoms offset
+              getAtoms :: Int -> V.Vector Vector3 -> [(Int, Vector3, Atom)]
+              getAtoms offset = zipWith (\i pos -> (i, pos, space M.! pos)) [offset..] . toList
               atomMap (i, V3 x y z, atom) = PE.ATOM {
                   no = i,
                   atomtype = getName atom,
@@ -280,12 +281,15 @@ writePDB handle SimulationState{..} = writeHeader >> doWrite beads >> doWrite bi
                   charge = "",
                   hetatm = False --musi być false
                   }
-              getName _ = "C" --TODO
+              getName Binder = "O"
+              getName Lamina = "P"
+              getName _ = "C"   --beads
               getRes BBBead = "BOU"
               getRes LBBead = "LAM"
               getRes Binder = "BIN"
               getRes NormBead = "UNB" -- chyba?
               getRes _ = error "getRes binder type"
+              chainLen = length beads
 
 
 main2 :: [String] -> IO ()
