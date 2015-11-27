@@ -1,13 +1,14 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards, DeriveGeneric #-}
 module Types where
 
 import System.Random
 import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
 import Linear as Lin
+import GHC.Generics (Generic)
 
 data Atom = NormBead | LBBead | BBBead | Lamina | Binder
-          deriving (Eq, Show)
+          deriving (Eq, Show, Generic)
 
 type Vector3 = Lin.V3 Int
 
