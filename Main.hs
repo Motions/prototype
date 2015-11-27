@@ -6,10 +6,10 @@ import Data.Maybe
 import Data.List
 import Data.Foldable
 import qualified Data.Vector as V
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Control.Monad.Trans.Maybe
 import Control.Monad.Loops
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import Linear
 import Data.Ord
 import qualified Debug.Trace as DT
@@ -79,12 +79,16 @@ recalculateEnergy :: SimulationState -> SimulationState
 recalculateEnergy state = state { energy = V.sum $ (V.map <$> (localEnergy . space) <*> beads) state }
 
 genSimState :: StdGen -> Double -> Int -> [Atom] -> Space -> SimulationState
-genSimState randGen radius numBinders (b:beads) space =
-        let fstBead = V3 0 0 0
-            st = SimulationState (M.insert fstBead b space) V.empty (V.singleton fstBead) 0 randGen
-            st' = genBeads beads st
-            st'' = genBinders radius numBinders st'
-        in recalculateEnergy st''
+genSimState randGen radius numBinders (b:beads) space = recalculateEnergy st''
+  where
+    st = SimulationState {
+        space = M.insert zero b space,
+        binders = V.empty,
+        beads = V.singleton zero,
+        energy = 0,
+        randgen = randGen }
+    st' = genBeads beads st
+    st'' = genBinders radius numBinders st'
 
 genBeads :: [Atom] -> SimulationState -> SimulationState
 genBeads [] st = st
@@ -108,13 +112,10 @@ genBinders radius n st = flip execState st $ replicateM_ n $ tryGen 100
     where tryGen :: Int -> State SimulationState ()
           tryGen 0 = fail "Unable to find initialization"
           tryGen n = do
-              x <- getRandRange (-r, r)
-              y <- getRandRange (-r, r)
-              z <- getRandRange (-r, r)
+              [x, y, z] <- replicateM 3 $ getRandRange (-r, r)
               let v = V3 x y z
-                  d = dist v zero
               st <- get
-              if d > fromIntegral (r - 2) || collides v st
+              if dist v zero > fromIntegral (r - 2) || collides v st
                   then tryGen (n - 1)
                   else let space' = M.insert v Binder $ space st
                            binders' = V.snoc (binders st) v
@@ -137,12 +138,11 @@ createRandomDelta = do
                     guard $ not $ moveIntersectsChain move st
                     return move
 
+-- |Checks whether a point is already occupied by some particle.
 collides :: Vector3 -> SimulationState -> Bool
 collides pos = M.member pos . space
 
 intersectsChain :: Vector3 -> Vector3 -> SimulationState -> Bool
-{-intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st-}
-    {-| DT.trace ("asdf " ++ show b1 ++ " " ++ show b2 ++ "\n" ++ show st) False = undefined-}
 intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st =
         let d = dist b1 b2 -- assume 0 < d <= sqrt 2
         in d == 1 || (let crossPositions =
@@ -162,15 +162,10 @@ intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st =
                             Just ix -> sndPos `elem` [chain V.! (ix - 1) | ix > 0]
                                                   ++ [chain V.! (ix + 1) | ix < length chain - 1])
 
+
+-- |Checks whether a move would cause a collision
 moveCollides :: Move -> SimulationState -> Bool
-moveCollides (MoveBinder ix delta) st =
-        let binderPos = (V.! ix) . binders $ st
-            newPos = binderPos + delta
-        in collides newPos st
-moveCollides (MoveBead ix delta) st =
-        let beadPos = (V.! ix) . beads $ st
-            newPos = beadPos + delta
-        in collides newPos st
+moveCollides move st = collides (snd $ moveEndPoints move st) st
 
 moveBreaksChain :: Move -> SimulationState -> Bool
 moveBreaksChain (MoveBinder _ _) _ = False
@@ -178,8 +173,6 @@ moveBreaksChain move@(MoveBead ix delta) st = any badNeighbors $ localNeighbors 
     where badNeighbors (b1, b2) = let d = dist b1 b2 in d <= 0 || d > sqrt 2
 
 moveIntersectsChain :: Move -> SimulationState -> Bool
-{-moveIntersectsChain move _-}
-    {-| DT.trace ("moveIntersectsChain " ++ show move) False = undefined-}
 moveIntersectsChain (MoveBinder _ _) _ = False
 moveIntersectsChain move@(MoveBead ix delta) st =
         any (\(b1, b2) -> intersectsChain b1 b2 st) $ localNeighbors move st
@@ -194,16 +187,23 @@ localNeighbors (MoveBead ix delta) st =
                       ++ [chain V.! (ix + 1) | ix < chainLen - 1]
         in zip localBeads (tail localBeads)
 
+-- |Returns the Euclidean distance between two vectors.
 dist :: Vector3 -> Vector3 -> Double
 dist u v = sqrt $ fromIntegral $ qd u v
 
-energyFromDelta :: Move -> SimulationState -> Double
-energyFromDelta move state = next - current
+-- |Returns the previous and next positions of the moved atom.
+moveEndPoints :: Move -> SimulationState -> (Vector3, Vector3)
+moveEndPoints move state = (from, from ^+^ diff)
   where
     (from, diff) = case move of
         MoveBinder pos diff -> (binders state V.! pos, diff)
         MoveBead pos diff -> (beads state V.! pos, diff)
-    to = from + diff
+
+-- |Computes the energy gain caused by a move (may be negative).
+energyFromDelta :: Move -> SimulationState -> Double
+energyFromDelta move state = next - current
+  where
+    (from, to) = moveEndPoints move state
     spc = space state
     current = localEnergy spc from
     next = localEnergy (moveParticle from to spc) to
@@ -225,42 +225,31 @@ moveParticle :: Vector3 -> Vector3 -> Space -> Space
 moveParticle from to space = M.insert to (space M.! from) $ M.delete from space
 
 applyDelta :: Move -> State SimulationState ()
-applyDelta (MoveBinder number delta) = do
-  state <- get
-  let current = binders state V.! number
-  energy_from_delta <- gets $ energyFromDelta (MoveBinder number delta)
-  put SimulationState{
-    space = moveParticle current (current + delta) (space state),
-    binders = binders state V.// [(number, current + delta)],
-    beads = beads state,
-    energy = energy state + energy_from_delta,
-    randgen = randgen state}
-applyDelta (MoveBead number delta) = do
-  state <- get
-  let current = beads state V.! number
-  energy_from_delta <- gets $ energyFromDelta (MoveBead number delta)
-  put SimulationState{
-    space = moveParticle current (current + delta) (space state),
-    binders = binders state,
-    beads = beads state V.// [(number, current + delta)],
-    energy = energy state + energy_from_delta,
-    randgen = randgen state}
+applyDelta move = do
+    state <- get
+    let (from, to) = moveEndPoints move state
+    let state' = state {
+        space = moveParticle from to (space state),
+        energy = energy state + energyFromDelta move state
+    }
+    case move of
+        MoveBinder idx _ -> put $ state' { binders = binders state' V.// [(idx, to)] }
+        MoveBead idx _ -> put $ state' { beads = beads state' V.// [(idx, to)] }
 
 simulateStep :: State SimulationState ()
-simulateStep = gets energy >>= selectMove >>= applyDelta
+simulateStep = selectMove >>= applyDelta
     where
-        selectMove oldEnergy = loop
-            where loop = do
-                    m <- findDelta
-                    r <- gets (energyFromDelta m) >>= checkE oldEnergy
-                    if r then return m
-                         else loop
+        selectMove = do
+            m <- findDelta
+            r <- gets (energyFromDelta m) >>= checkE
+            if r then return m
+            else selectMove
         findDelta = untilJust $ runMaybeT createRandomDelta
-        checkE oldEnergy newEnergy
-            | newEnergy >= oldEnergy = return True
+        checkE diff
+            | diff >= 0 = return True
             | otherwise = do
                 r <- getRandRange (0, 1)
-                return $ r < exp ((newEnergy - oldEnergy) * _DELTA)
+                return $ r < exp (diff * _DELTA)
         _DELTA = 2
 
 
