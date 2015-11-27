@@ -237,14 +237,13 @@ applyDelta move = do
         MoveBead idx _ -> put $ state' { beads = beads state' V.// [(idx, to)] }
 
 simulateStep :: State SimulationState ()
-simulateStep = gets energy >>= selectMove >>= applyDelta
+simulateStep = selectMove >>= applyDelta
     where
-        selectMove oldEnergy = loop
-            where loop = do
-                    m <- findDelta
-                    r <- gets (energyFromDelta m) >>= checkE
-                    if r then return m
-                         else loop
+        selectMove = do
+            m <- findDelta
+            r <- gets (energyFromDelta m) >>= checkE
+            if r then return m
+            else selectMove
         findDelta = untilJust $ runMaybeT createRandomDelta
         checkE diff
             | diff >= 0 = return True
