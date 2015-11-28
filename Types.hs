@@ -3,7 +3,7 @@ module Types where
 
 import System.Random
 import qualified Data.Map.Strict as M
-import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as V
 import Linear as Lin
 import GHC.Generics (Generic)
 
@@ -18,7 +18,7 @@ data SimulationState = SimulationState {
                      space :: !Space,
                      binders :: !(V.Vector Vector3),
                      beads :: !(V.Vector Vector3),
-                     energy :: !Double,
+                     energy :: {-# UNPACK #-} !Double,
                      randgen :: !StdGen }
 
 instance Show SimulationState where
@@ -28,5 +28,5 @@ instance Show SimulationState where
                             show beads,
                             show energy]
 
-data Move = MoveBinder !Int !Vector3 | MoveBead !Int !Vector3
+data Move = MoveBinder {-# UNPACK #-} !Int !Vector3 | MoveBead {-# UNPACK #-}!Int !Vector3
           deriving (Eq, Show)

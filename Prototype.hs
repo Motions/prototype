@@ -5,7 +5,7 @@ import System.Random
 import Data.Maybe
 import Data.List
 import Data.Foldable
-import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as V
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Maybe
 import Control.Monad.Loops
@@ -16,6 +16,7 @@ import qualified Debug.Trace as DT
 import qualified Bio.PDB.EventParser.PDBEvents as PE
 import qualified Bio.PDB.EventParser.PDBEventPrinter as PP
 import qualified Data.ByteString.Char8 as BS
+import Data.MonoTraversable
 
 import Types
 
@@ -37,9 +38,9 @@ getRand = getRandWith random
 getRandRange :: Random a => (a, a) -> State SimulationState a
 getRandRange range = getRandWith $ randomR range
 
-getRandFromVec :: V.Vector a -> State SimulationState a
+getRandFromVec :: V.Unbox a => V.Vector a -> State SimulationState a
 getRandFromVec vec = do
-        ix <- getRandRange (0, length vec - 1)
+        ix <- getRandRange (0, V.length vec - 1)
         return $ vec V.! ix
 
 
@@ -99,7 +100,7 @@ genBeads (b:bs) st@(SimulationState space binders beads energy randGen) =
         in genBeads bs (SimulationState newSpace binders newBeads energy newRandGen)
     where tryGen 0 _ = error "Unable to find initialization (beads)"
           tryGen n gen =
-              let (ix, gen') = randomR (0, length atomMoves - 1) gen
+              let (ix, gen') = randomR (0, V.length atomMoves - 1) gen
                   delta = atomMoves V.! ix
                   lastPos = V.last beads
                   newPos = lastPos + delta
@@ -127,7 +128,7 @@ createRandomDelta :: MaybeT (State SimulationState) Move
 createRandomDelta = do
         moveBinder <- lift getRand
         atoms <- gets $ if moveBinder then binders else beads
-        atomIx <- lift $ getRandRange (0, length atoms - 1)
+        atomIx <- lift $ getRandRange (0, V.length atoms - 1)
         delta <- lift $ getRandFromVec atomMoves
         let move = (if moveBinder then MoveBinder else MoveBead) atomIx delta
         st <- get
@@ -160,7 +161,7 @@ intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st =
                      in case V.elemIndex fstPos chain of
                             Nothing -> error "bead in space but not in chain"
                             Just ix -> sndPos `elem` [chain V.! (ix - 1) | ix > 0]
-                                                  ++ [chain V.! (ix + 1) | ix < length chain - 1])
+                                                  ++ [chain V.! (ix + 1) | ix < V.length chain - 1])
 
 
 -- |Checks whether a move would cause a collision
@@ -181,7 +182,7 @@ localNeighbors :: Move -> SimulationState -> [(Vector3, Vector3)]
 localNeighbors (MoveBinder _ _) _ = []
 localNeighbors (MoveBead ix delta) st =
         let chain = beads st
-            chainLen = length chain
+            chainLen = V.length chain
             localBeads = [chain V.! (ix - 1) | ix > 0]
                       ++ [(chain V.! ix) + delta]
                       ++ [chain V.! (ix + 1) | ix < chainLen - 1]
@@ -264,7 +265,7 @@ writePDB handle SimulationState{..} =
               writeConect n = traverse_ (\i -> PP.print handle $ PE.CONECT [i, i+1]) [1..n]
               doWrite offset = traverse_ (PP.print handle . atomMap) . getAtoms offset
               getAtoms :: Int -> V.Vector Vector3 -> [(Int, Vector3, Atom)]
-              getAtoms offset = zipWith (\i pos -> (i, pos, space M.! pos)) [offset..] . toList
+              getAtoms offset = zipWith (\i pos -> (i, pos, space M.! pos)) [offset..] . otoList
               atomMap (i, V3 x y z, atom) = PE.ATOM {
                   no = i,
                   atomtype = getName atom,
@@ -289,7 +290,7 @@ writePDB handle SimulationState{..} =
               getRes Binder = "BIN"
               getRes Lamina = "LAM"
               getRes NormBead = "UNB"
-              chainLen = length beads
+              chainLen = olength beads
 
 
 main2 :: [String] -> IO ()
