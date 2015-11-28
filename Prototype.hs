@@ -1,4 +1,4 @@
-{-# LANGUAGE TupleSections, RecordWildCards, OverloadedStrings #-}
+{-# LANGUAGE TupleSections, RecordWildCards, OverloadedStrings, BangPatterns #-}
 module Prototype where
 import System.IO
 import System.Random
@@ -12,10 +12,8 @@ import Control.Monad.Loops
 import qualified Data.Map.Strict as M
 import Linear
 import Data.Ord
-import qualified Debug.Trace as DT
 import qualified Bio.PDB.EventParser.PDBEvents as PE
 import qualified Bio.PDB.EventParser.PDBEventPrinter as PP
-import qualified Data.ByteString.Char8 as BS
 import Data.MonoTraversable
 
 import Types
@@ -40,7 +38,7 @@ getRandRange range = getRandWith $ randomR range
 
 getRandFromVec :: V.Unbox a => V.Vector a -> State SimulationState a
 getRandFromVec vec = do
-        ix <- getRandRange (0, V.length vec - 1)
+        ix <- getRandRange (0, olength vec - 1)
         return $ vec V.! ix
 
 
@@ -48,15 +46,16 @@ spherePoints :: Double -> [Vector3]
 spherePoints radius = do
   let r = (ceiling radius::Int) + 2
   x <- [-r .. r]
-  let y_max = ceiling $ sqrt $ (radius + 2)^2 - (fromIntegral x^2)
+  let y_max = ceiling $ sqrt $ sq (radius + 2) - fromIntegral (sq x)
   y <- [-y_max .. y_max]
-  let z_square_min = (radius - 2)^2 - fromIntegral (x^2 + y^2)
-  let z_square_max = (radius + 2)^2 - fromIntegral (x^2 + y^2)
+  let z_square_min = sq (radius - 2) - fromIntegral (sq x + sq y)
+  let z_square_max = sq (radius + 2) - fromIntegral (sq x + sq y)
   let lower_bound = if z_square_min < 0 then 0 else ceiling $ sqrt z_square_min
   let upper_bound = if z_square_max < 0 then -1 else floor $ sqrt z_square_max
   abs_z <- [lower_bound .. upper_bound]
   z <- nub [abs_z, -abs_z]
   return $ V3 x y z
+  where sq x = x * x
 
 genSpace :: Double -> Space
 genSpace radius = M.fromList $ map (,Lamina) $ spherePoints radius
@@ -67,17 +66,17 @@ fillGaps x ((y, a):tl) | x == y = a : fillGaps (x+1) tl
 fillGaps x l = NormBead : fillGaps (x+1) l
 
 loadChain :: Int -> FilePath -> FilePath -> IO [Atom]
-loadChain length laminBS binderBS = do
+loadChain len laminBS binderBS = do
   laminBSs <- makeAtoms LBBead <$> readFile laminBS
   binderBSs <- makeAtoms BBBead <$> readFile binderBS
-  let indexed_bss = sortBy (comparing fst) $ laminBSs ++ binderBSs ++ [(length + 1, NormBead)]
+  let indexed_bss = sortBy (comparing fst) $ laminBSs ++ binderBSs ++ [(len + 1, NormBead)]
   return $ init $ fillGaps 1 indexed_bss
   where
     makeAtoms typ = flip zip (repeat typ) . map read . lines
 
 
 recalculateEnergy :: SimulationState -> SimulationState
-recalculateEnergy state = state { energy = V.sum $ (V.map <$> (localEnergy . space) <*> beads) state }
+recalculateEnergy st = st { energy = V.sum $ (V.map <$> (localEnergy . space) <*> beads) st }
 
 genSimState :: StdGen -> Double -> Int -> [Atom] -> Space -> SimulationState
 genSimState randGen radius numBinders (b:beads) space = recalculateEnergy st''
@@ -90,17 +89,18 @@ genSimState randGen radius numBinders (b:beads) space = recalculateEnergy st''
         randgen = randGen }
     st' = genBeads beads st
     st'' = genBinders radius numBinders st'
+genSimState _ _ _ [] _ = error "Empty beads list"
 
 genBeads :: [Atom] -> SimulationState -> SimulationState
 genBeads [] st = st
-genBeads (b:bs) st@(SimulationState space binders beads energy randGen) =
-        let (pos, newRandGen) = tryGen 100 randGen
+genBeads (b:bs) st@SimulationState{..} =
+        let (pos, newRandGen) = tryGen (100 :: Int) randgen
             newSpace = M.insert pos b space
             newBeads = V.snoc beads pos
-        in genBeads bs (SimulationState newSpace binders newBeads energy newRandGen)
+        in genBeads bs $ st { space = newSpace, beads = newBeads, randgen = newRandGen }
     where tryGen 0 _ = error "Unable to find initialization (beads)"
-          tryGen n gen =
-              let (ix, gen') = randomR (0, V.length atomMoves - 1) gen
+          tryGen n !gen =
+              let (ix, gen') = randomR (0, olength atomMoves - 1) gen
                   delta = atomMoves V.! ix
                   lastPos = V.last beads
                   newPos = lastPos + delta
@@ -109,7 +109,7 @@ genBeads (b:bs) st@(SimulationState space binders beads energy randGen) =
                      else (newPos, gen')
 
 genBinders :: Double -> Int -> SimulationState -> SimulationState
-genBinders radius n st = flip execState st $ replicateM_ n $ tryGen 100
+genBinders radius n0 st0 = flip execState st0 $ replicateM_ n0 $ tryGen 100
     where tryGen :: Int -> State SimulationState ()
           tryGen 0 = fail "Unable to find initialization (binders)"
           tryGen n = do
@@ -128,7 +128,7 @@ createRandomDelta :: MaybeT (State SimulationState) Move
 createRandomDelta = do
         moveBinder <- lift getRand
         atoms <- gets $ if moveBinder then binders else beads
-        atomIx <- lift $ getRandRange (0, V.length atoms - 1)
+        atomIx <- lift $ getRandRange (0, olength atoms - 1)
         delta <- lift $ getRandFromVec atomMoves
         let move = (if moveBinder then MoveBinder else MoveBead) atomIx delta
         st <- get
@@ -161,7 +161,7 @@ intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st =
                      in case V.elemIndex fstPos chain of
                             Nothing -> error "bead in space but not in chain"
                             Just ix -> sndPos `elem` [chain V.! (ix - 1) | ix > 0]
-                                                  ++ [chain V.! (ix + 1) | ix < V.length chain - 1])
+                                                  ++ [chain V.! (ix + 1) | ix < olength chain - 1])
 
 
 -- |Checks whether a move would cause a collision
@@ -170,19 +170,18 @@ moveCollides move st = collides (snd $ moveEndPoints move st) st
 
 moveBreaksChain :: Move -> SimulationState -> Bool
 moveBreaksChain (MoveBinder _ _) _ = False
-moveBreaksChain move@(MoveBead ix delta) st = any badNeighbors $ localNeighbors move st
+moveBreaksChain move@(MoveBead _ _) st = any badNeighbors $ localNeighbors move st
     where badNeighbors (b1, b2) = let d = dist b1 b2 in d <= 0 || d > sqrt 2
 
 moveIntersectsChain :: Move -> SimulationState -> Bool
 moveIntersectsChain (MoveBinder _ _) _ = False
-moveIntersectsChain move@(MoveBead ix delta) st =
-        any (\(b1, b2) -> intersectsChain b1 b2 st) $ localNeighbors move st
+moveIntersectsChain move@(MoveBead _ _) st = any (\(b1, b2) -> intersectsChain b1 b2 st) $ localNeighbors move st
 
 localNeighbors :: Move -> SimulationState -> [(Vector3, Vector3)]
 localNeighbors (MoveBinder _ _) _ = []
 localNeighbors (MoveBead ix delta) st =
         let chain = beads st
-            chainLen = V.length chain
+            chainLen = olength chain
             localBeads = [chain V.! (ix - 1) | ix > 0]
                       ++ [(chain V.! ix) + delta]
                       ++ [chain V.! (ix + 1) | ix < chainLen - 1]
@@ -194,25 +193,25 @@ dist u v = sqrt $ fromIntegral $ qd u v
 
 -- |Returns the previous and next positions of the moved atom.
 moveEndPoints :: Move -> SimulationState -> (Vector3, Vector3)
-moveEndPoints move state = (from, from ^+^ diff)
+moveEndPoints move st = (from, from ^+^ delta)
   where
-    (from, diff) = case move of
-        MoveBinder pos diff -> (binders state V.! pos, diff)
-        MoveBead pos diff -> (beads state V.! pos, diff)
+    (from, delta) = case move of
+        MoveBinder pos del -> (binders st V.! pos, del)
+        MoveBead pos del -> (beads st V.! pos, del)
 
 -- |Computes the energy gain caused by a move (may be negative).
 energyFromDelta :: Move -> SimulationState -> Double
-energyFromDelta move state = next - current
+energyFromDelta move st = nxt - cur
   where
-    (from, to) = moveEndPoints move state
-    spc = space state
-    current = localEnergy spc from
-    next = localEnergy (moveParticle from to spc) to
+    (from, to) = moveEndPoints move st
+    spc = space st
+    cur = localEnergy spc from
+    nxt = localEnergy (moveParticle from to spc) to
 
 
 -- |Computes the sum of binding energies between the atom placed at 'pos' and its neighbours.
 localEnergy :: Space -> Vector3 -> Double
-localEnergy space pos = sum $ map energyTo $ neighbourPositions pos
+localEnergy space pos = sum $ map energyTo neighbourPositions
   where
     energyTo pos' = fromMaybe 0 $ energyBetweenAtoms <$> atom <*> M.lookup pos' space
     energyBetweenAtoms x y
@@ -220,22 +219,22 @@ localEnergy space pos = sum $ map energyTo $ neighbourPositions pos
       | otherwise = 0
     atom = M.lookup pos space
     bindings = [(Lamina, LBBead), (Binder, BBBead), (Binder, LBBead)]
-    neighbourPositions pos = map (pos ^+^) $ [id, negated] <*> basis
+    neighbourPositions = map (pos ^+^) $ [id, negated] <*> basis
 
 moveParticle :: Vector3 -> Vector3 -> Space -> Space
 moveParticle from to space = M.insert to (space M.! from) $ M.delete from space
 
 applyDelta :: Move -> State SimulationState ()
 applyDelta move = do
-    state <- get
-    let (from, to) = moveEndPoints move state
-    let state' = state {
-        space = moveParticle from to (space state),
-        energy = energy state + energyFromDelta move state
+    st <- get
+    let (from, to) = moveEndPoints move st
+    let st' = st {
+        space = moveParticle from to (space st),
+        energy = energy st + energyFromDelta move st
     }
     case move of
-        MoveBinder idx _ -> put $ state' { binders = binders state' V.// [(idx, to)] }
-        MoveBead idx _ -> put $ state' { beads = beads state' V.// [(idx, to)] }
+        MoveBinder idx _ -> put $ st' { binders = binders st' V.// [(idx, to)] }
+        MoveBead idx _ -> put $ st' { beads = beads st' V.// [(idx, to)] }
 
 simulateStep :: State SimulationState ()
 simulateStep = selectMove >>= applyDelta
@@ -246,11 +245,11 @@ simulateStep = selectMove >>= applyDelta
             if r then return m
                 else selectMove
         findDelta = untilJust $ runMaybeT createRandomDelta
-        checkE diff
-            | diff >= 0 = return True
+        checkE delta
+            | delta >= 0 = return True
             | otherwise = do
                 r <- getRandRange (0, 1)
-                return $ r < exp (diff * _DELTA)
+                return $ r < exp (delta * _DELTA)
         _DELTA = 2
 
 
@@ -300,7 +299,7 @@ main2 args = do
         let radius = read r
             space = genSpace radius
         randGen <- newStdGen
-        let state = genSimState randGen radius (read numBinders) chain space
-            ret = execState (simulate (read steps)) state
+        let st = genSimState randGen radius (read numBinders) chain space
+            ret = execState (simulate (read steps)) st
         writePDB stdout ret
 
