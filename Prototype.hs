@@ -287,8 +287,8 @@ writePDB handle SimulationState{..} =
               getRes BBBead = "BOU"
               getRes LBBead = "LAM"
               getRes Binder = "BIN"
-              getRes NormBead = "UNB" -- chyba?
-              getRes _ = error "getRes binder type"
+              getRes Lamina = "LAM"
+              getRes NormBead = "UNB"
               chainLen = length beads
 
 
