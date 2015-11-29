@@ -301,6 +301,6 @@ writePDB handle SimulationState{..} =
 run :: Input -> SimulationState
 run Input{..} = execState (replicateM_ inputNumSteps simulateStep) st
   where
+    st = genSimState inputRandGen inputRadius inputNumBinders chain space
     chain = loadChain inputChainLength inputLamins inputBinders
     space = genSpace inputRadius
-    st = genSimState inputRandGen inputRadius inputNumBinders chain space
