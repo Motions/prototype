@@ -96,10 +96,13 @@ genSimState randGen radius numBinders (b:beads) space = recalculateEnergy st''
     st'' = genBinders radius numBinders st'
 genSimState _ _ _ [] _ = error "Empty beads list"
 
+maxGenRetries :: Int
+maxGenRetries = 100
+
 genBeads :: [Atom] -> SimulationState -> SimulationState
 genBeads [] st = st
 genBeads (b:bs) st@SimulationState{..} =
-        let (pos, newRandGen) = tryGen (100 :: Int) randgen
+        let (pos, newRandGen) = tryGen maxGenRetries randgen
             newSpace = M.insert pos b space
             newBeads = V.snoc beads pos
         in genBeads bs $ st { space = newSpace, beads = newBeads, randgen = newRandGen }
@@ -114,9 +117,8 @@ genBeads (b:bs) st@SimulationState{..} =
                      else (newPos, gen')
 
 genBinders :: Double -> Int -> SimulationState -> SimulationState
-genBinders radius n0 st0 = flip execState st0 $ replicateM_ n0 $ tryGen 100
-    where tryGen :: Int -> State SimulationState ()
-          tryGen 0 = fail "Unable to find initialization (binders)"
+genBinders radius n0 st0 = flip execState st0 $ replicateM_ n0 $ tryGen maxGenRetries
+    where tryGen 0 = fail "Unable to find initialization (binders)"
           tryGen n = do
               [x, y, z] <- replicateM 3 $ getRandRange (-r, r)
               let v = V3 x y z
