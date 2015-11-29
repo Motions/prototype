@@ -46,7 +46,6 @@ executable prototype
   ghc-options:         -Wall -O2 -fllvm
   ghc-prof-options:    -fprof-auto
 
--- TODO nie duplikować zależności
 benchmark bench
   type:                exitcode-stdio-1.0
   main-is:      Benchmark.hs

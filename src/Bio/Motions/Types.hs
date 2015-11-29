@@ -28,7 +28,7 @@ instance Show SimulationState where
                             show beads,
                             show energy]
 
-data Move = MoveBinder {-# UNPACK #-} !Int !Vector3 | MoveBead {-# UNPACK #-}!Int !Vector3
+data Move = MoveBinder {-# UNPACK #-} !Int !Vector3 | MoveBead {-# UNPACK #-} !Int !Vector3
           deriving (Eq, Show)
 
 data Input = Input
