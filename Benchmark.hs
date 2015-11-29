@@ -31,8 +31,8 @@ runSim :: Int -> SimulationState -> SimulationState
 runSim steps = execState (simulate steps)
 
 instance NFData SimulationState where
-    rnf (SimulationState s bi be en _) =
-        rnf s `seq` rnf bi `seq` rnf be `seq` rnf en
+    rnf (SimulationState s bi be en gr _) =
+        rnf s `seq` rnf bi `seq` rnf be `seq` rnf en `seq` rnf gr
 instance NFData Atom
 
 

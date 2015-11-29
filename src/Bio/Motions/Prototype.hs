@@ -1,4 +1,4 @@
-{-# LANGUAGE TupleSections, RecordWildCards, OverloadedStrings, FlexibleContexts #-}
+{-# LANGUAGE TupleSections, RecordWildCards, OverloadedStrings, FlexibleContexts, ViewPatterns #-}
 module Bio.Motions.Prototype(
     module Types,
     simulate,
@@ -82,7 +82,12 @@ loadChain len laminBS binderBS = init $ fillGaps 1 indexed_bss
 
 
 recalculateEnergy :: SimulationState -> SimulationState
-recalculateEnergy st = st { energy = V.sum $ (V.map <$> (localEnergy . space) <*> beads) st }
+recalculateEnergy st@SimulationState{..} = st {
+    energy = V.sum $ V.map (localEnergy space) beads,
+    gyrationRadius = coef * V.sum (V.map prefix $ V.indexed beads) }
+  where
+    prefix (idx, bead) = V.sum $ V.map (dist bead) $ V.unsafeTake idx beads
+    coef = 2 / fromIntegral (V.length beads * (V.length beads - 1))
 
 genSimState :: MonadError String m => StdGen -> Double -> Int -> [Atom] -> Space -> m SimulationState
 genSimState randGen radius numBinders (b:beads) space = recalculateEnergy <$> st'
@@ -92,6 +97,7 @@ genSimState randGen radius numBinders (b:beads) space = recalculateEnergy <$> st
         binders = V.empty,
         beads = V.singleton zero,
         energy = 0,
+        gyrationRadius = 0,
         randgen = randGen }
     st' = flip execStateT st $ genBeads beads >> genBinders radius numBinders
 genSimState _ _ _ [] _ = throwError "Empty beads list"
@@ -238,7 +244,16 @@ applyDelta move = do
     }
     case move of
         MoveBinder idx _ -> put $ st' { binders = binders st' V.// [(idx, to)] }
-        MoveBead idx _ -> put $ st' { beads = beads st' V.// [(idx, to)] }
+        MoveBead idx _ -> put $ st' {
+            beads = beads st' V.// [(idx, to)],
+            gyrationRadius = gyrationRadius st' + gyrationRadiusDiff idx from to (beads st')}
+    where
+        gyrationRadiusDiff idx from to beads =
+            let (front, V.tail -> back) = V.splitAt idx beads
+                diff bead = fromIntegral (qd to bead - qd from bead) / (dist to bead + dist from bead)
+                func = V.sum . V.map diff
+                coef = 2 / fromIntegral (V.length beads * (V.length beads - 1))
+            in  coef * (func front + func back)
 
 simulateStep :: MonadState SimulationState m => m ()
 simulateStep = selectMove >>= applyDelta

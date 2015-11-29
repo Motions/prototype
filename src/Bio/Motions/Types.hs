@@ -19,6 +19,7 @@ data SimulationState = SimulationState {
                      binders :: !(V.Vector Vector3),
                      beads :: !(V.Vector Vector3),
                      energy :: {-# UNPACK #-} !Double,
+                     gyrationRadius :: {-# UNPACK #-} !Double,
                      randgen :: !StdGen }
 
 instance Show SimulationState where
