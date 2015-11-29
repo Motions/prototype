@@ -1,5 +1,12 @@
 {-# LANGUAGE TupleSections, RecordWildCards, OverloadedStrings, BangPatterns #-}
-module Prototype where
+module Bio.Motions.Prototype(
+    module Types,
+    simulate,
+    writePDB,
+    run,
+    genSimState,
+    genSpace,
+    loadChain) where
 import System.IO
 import System.Random
 import Data.Maybe
@@ -16,7 +23,7 @@ import qualified Bio.PDB.EventParser.PDBEvents as PE
 import qualified Bio.PDB.EventParser.PDBEventPrinter as PP
 import Data.MonoTraversable
 
-import Types
+import Bio.Motions.Types as Types
 
 atomMoves :: V.Vector Vector3
 atomMoves = V.fromList [V3 x y z | list@[x,y,z] <- replicateM 3 [-1,0,1],

@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards, DeriveGeneric #-}
-module Types where
+module Bio.Motions.Types where
 
 import System.Random
 import qualified Data.Map.Strict as M

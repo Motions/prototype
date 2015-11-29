@@ -1,7 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
-import Prototype
+import Bio.Motions.Prototype as Prototype
 import Options.Applicative
-import Types
 import System.IO
 import System.Random
 

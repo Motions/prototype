@@ -16,8 +16,8 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:      Prototype
-  other-modules:       Types
+  exposed-modules:     Bio.Motions.Prototype
+  other-modules:       Bio.Motions.Types
   -- other-extensions:    
   build-depends:       base >=4.8 && <4.9,
                        hPDB,
@@ -30,31 +30,21 @@ library
                        monad-loops,
                        bytestring,
                        mono-traversable
-  -- hs-source-dirs:      
+  hs-source-dirs:      src
   default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -O2
-                       -fllvm
-
+  ghc-options:         -Wall -O2 -fllvm
+  ghc-prof-options:    -fprof-auto
 
 executable prototype
   main-is:             Main.hs
   build-depends:       base >=4.8 && <4.9,
                        zpp-prototype,
-                       hPDB,
-                       containers,
-                       random,
-                       mtl,
-                       vector,
-                       linear,
-                       transformers,
-                       monad-loops,
-                       bytestring,
-                       mono-traversable,
-                       optparse-applicative
-  ghc-options:         -Wall
-                       -O2
-                       -fllvm
+                       optparse-applicative,
+                       random
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall -O2 -fllvm
+  ghc-prof-options:    -fprof-auto
 
 -- TODO nie duplikować zależności
 benchmark bench
@@ -62,18 +52,10 @@ benchmark bench
   main-is:      Benchmark.hs
   build-depends:       base >=4.8 && <4.9,
                        zpp-prototype,
+                       mtl,
                        criterion,
                        deepseq,
-                       hPDB,
-                       containers,
-                       random,
-                       mtl,
-                       vector,
-                       linear,
-                       transformers,
-                       monad-loops,
-                       bytestring,
-                       mono-traversable
-  ghc-options:         -Wall
-                       -O2
-                       -fllvm
+                       random
+
+  default-language:    Haskell2010
+  ghc-options:         -W -O2 -fllvm

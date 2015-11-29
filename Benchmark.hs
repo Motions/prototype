@@ -2,8 +2,7 @@
 
 module Main where
 import Criterion.Main
-import Types
-import Prototype
+import Bio.Motions.Prototype as Prototype
 import System.Random
 import Control.Monad.State.Strict
 import Control.DeepSeq
