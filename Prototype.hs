@@ -65,14 +65,12 @@ fillGaps _ [] = []
 fillGaps x ((y, a):tl) | x == y = a : fillGaps (x+1) tl
 fillGaps x l = NormBead : fillGaps (x+1) l
 
-loadChain :: Int -> FilePath -> FilePath -> IO [Atom]
-loadChain len laminBS binderBS = do
-  laminBSs <- makeAtoms LBBead <$> readFile laminBS
-  binderBSs <- makeAtoms BBBead <$> readFile binderBS
-  let indexed_bss = sortBy (comparing fst) $ laminBSs ++ binderBSs ++ [(len + 1, NormBead)]
-  return $ init $ fillGaps 1 indexed_bss
+loadChain :: Int -> [Int] -> [Int] -> [Atom]
+loadChain len laminBS binderBS = init $ fillGaps 1 indexed_bss
   where
-    makeAtoms typ = flip zip (repeat typ) . map read . lines
+    laminBSs = map (,LBBead) laminBS
+    binderBSs = map (,BBBead) binderBS
+    indexed_bss = sortBy (comparing fst) $ laminBSs ++ binderBSs ++ [(len + 1, NormBead)]
 
 
 recalculateEnergy :: SimulationState -> SimulationState
@@ -252,7 +250,6 @@ simulateStep = selectMove >>= applyDelta
                 return $ r < exp (delta * _DELTA)
         _DELTA = 2
 
-
 simulate :: Int -> State SimulationState ()
 simulate = flip replicateM_ simulateStep
 
@@ -292,14 +289,9 @@ writePDB handle SimulationState{..} =
               chainLen = olength beads
 
 
-main2 :: [String] -> IO ()
-main2 args = do
-        let [chain_length, laminFile, binderFile, r, numBinders, steps] = args
-        chain <- loadChain (read chain_length) laminFile binderFile
-        let radius = read r
-            space = genSpace radius
-        randGen <- newStdGen
-        let st = genSimState randGen radius (read numBinders) chain space
-            ret = execState (simulate (read steps)) st
-        writePDB stdout ret
-
+run :: Input -> SimulationState
+run Input{..} = execState (replicateM_ inputNumSteps simulateStep) st
+  where
+    chain = loadChain inputChainLength inputLamins inputBinders
+    space = genSpace inputRadius
+    st = genSimState inputRandGen inputRadius inputNumBinders chain space

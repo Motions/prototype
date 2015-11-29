@@ -30,3 +30,13 @@ instance Show SimulationState where
 
 data Move = MoveBinder {-# UNPACK #-} !Int !Vector3 | MoveBead {-# UNPACK #-}!Int !Vector3
           deriving (Eq, Show)
+
+data Input = Input
+    { inputChainLength :: Int
+    , inputLamins :: [Int]
+    , inputBinders :: [Int]
+    , inputRadius :: Double
+    , inputNumBinders :: Int
+    , inputNumSteps :: Int
+    , inputRandGen :: StdGen
+    }

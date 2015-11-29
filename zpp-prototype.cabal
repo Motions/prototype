@@ -50,7 +50,8 @@ executable prototype
                        transformers,
                        monad-loops,
                        bytestring,
-                       mono-traversable
+                       mono-traversable,
+                       optparse-applicative
   ghc-options:         -Wall
                        -O2
                        -fllvm

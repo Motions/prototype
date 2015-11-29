@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Main where
 import Criterion.Main
 import Types
@@ -7,21 +9,17 @@ import Control.Monad.State.Strict
 import Control.DeepSeq
 import Control.Exception
 
-globalParams :: [String]
+globalParams :: Input
 --TODO don't hardcode paths
-globalParams = ["256", "../lamin_bsites.txt", "../regular_bsites.txt", "30", "200", "100000"]
-
--- hack
-mainNoOut :: [String] -> IO SimulationState
-mainNoOut args = do
-        let [chain_length, laminFile, binderFile, r, numBinders, steps] = args
-        chain <- loadChain (read chain_length) laminFile binderFile
-        let radius = read r
-            space = genSpace radius
-        randGen <- newStdGen
-        let state = genSimState randGen radius (read numBinders) chain space
-            ret = execState (simulate (read steps)) state
-        return ret
+globalParams = Input
+    { inputChainLength = 256
+    , inputLamins = [1, 8, 10, 23, 99]
+    , inputBinders = [7, 9, 11, 17, 63, 89]
+    , inputRadius = 30
+    , inputNumBinders = 20
+    , inputNumSteps = 100000
+    , inputRandGen = mkStdGen 42
+    }
 
 generate :: StdGen -> Double -> Int -> [Atom] -> SimulationState
 generate ran radius numBinders chain =
@@ -43,7 +41,7 @@ runBench :: ([Atom] -> SimulationState, [Atom])
          -> IO ()
 runBench (gen, chain) (run, state) = defaultMain [
         bgroup "io" [
-            bench "100k-chain256" $ nfIO (mainNoOut globalParams)],
+            bench "100k-chain256" $ nf Prototype.run globalParams],
         bgroup "pure" [
             bench "genstate" $ nf gen chain,
             bench "sim-100k" $ nf run state]
@@ -51,9 +49,9 @@ runBench (gen, chain) (run, state) = defaultMain [
 
 main :: IO ()
 main = do
-    let [chain_length, laminFile, binderFile, r, numBinders, steps] = globalParams
-    let stg ran = generate ran (read r) (read numBinders)
-    chain <- loadChain (read chain_length) laminFile binderFile >>= evaluate . force
+    let Input{..} = globalParams
+    let stg ran = generate ran inputRadius inputNumBinders
+    let chain = force $ loadChain inputChainLength inputLamins inputBinders
 
     chainRan <- newStdGen
     let chainTest = (stg chainRan, chain)
