@@ -9,7 +9,6 @@ import Control.DeepSeq
 import Control.Exception
 
 globalParams :: Input
---TODO don't hardcode paths
 globalParams = Input
     { inputChainLength = 256
     , inputLamins = [1, 8, 10, 23, 99]
