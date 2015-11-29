@@ -45,8 +45,8 @@ getRandRange range = getRandWith $ randomR range
 
 getRandFromVec :: V.Unbox a => V.Vector a -> State SimulationState a
 getRandFromVec vec = do
-        ix <- getRandRange (0, olength vec - 1)
-        return $ vec V.! ix
+        idx <- getRandRange (0, olength vec - 1)
+        return $ vec V.! idx
 
 
 spherePoints :: Double -> [Vector3]
@@ -108,8 +108,8 @@ genBeads (b:bs) st@SimulationState{..} =
         in genBeads bs $ st { space = newSpace, beads = newBeads, randgen = newRandGen }
     where tryGen 0 _ = error "Unable to find initialization (beads)"
           tryGen n !gen =
-              let (ix, gen') = randomR (0, olength atomMoves - 1) gen
-                  delta = atomMoves V.! ix
+              let (idx, gen') = randomR (0, olength atomMoves - 1) gen
+                  delta = atomMoves V.! idx
                   lastPos = V.last beads
                   newPos = lastPos + delta
               in if collides newPos st || intersectsChain lastPos newPos st
@@ -135,9 +135,9 @@ createRandomDelta :: MaybeT (State SimulationState) Move
 createRandomDelta = do
         moveBinder <- lift getRand
         atoms <- gets $ if moveBinder then binders else beads
-        atomIx <- lift $ getRandRange (0, olength atoms - 1)
+        atomIdx <- lift $ getRandRange (0, olength atoms - 1)
         delta <- lift $ getRandFromVec atomMoves
-        let move = (if moveBinder then MoveBinder else MoveBead) atomIx delta
+        let move = (if moveBinder then MoveBinder else MoveBead) atomIdx delta
         st <- get
         guard $ not $ moveCollides move st
         if moveBinder
@@ -167,8 +167,8 @@ intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st =
                  && (let chain = beads st
                      in case V.elemIndex fstPos chain of
                             Nothing -> error "bead in space but not in chain"
-                            Just ix -> sndPos `elem` [chain V.! (ix - 1) | ix > 0]
-                                                  ++ [chain V.! (ix + 1) | ix < olength chain - 1])
+                            Just idx -> sndPos `elem` [chain V.! (idx - 1) | idx > 0]
+                                                   ++ [chain V.! (idx + 1) | idx < olength chain - 1])
 
 
 -- |Checks whether a move would cause a collision
@@ -186,12 +186,12 @@ moveIntersectsChain move@(MoveBead _ _) st = any (\(b1, b2) -> intersectsChain b
 
 localNeighbors :: Move -> SimulationState -> [(Vector3, Vector3)]
 localNeighbors (MoveBinder _ _) _ = []
-localNeighbors (MoveBead ix delta) st =
+localNeighbors (MoveBead idx delta) st =
         let chain = beads st
             chainLen = olength chain
-            localBeads = [chain V.! (ix - 1) | ix > 0]
-                      ++ [(chain V.! ix) + delta]
-                      ++ [chain V.! (ix + 1) | ix < chainLen - 1]
+            localBeads = [chain V.! (idx - 1) | idx > 0]
+                      ++ [(chain V.! idx) + delta]
+                      ++ [chain V.! (idx + 1) | idx < chainLen - 1]
         in zip localBeads (tail localBeads)
 
 -- |Returns the Euclidean distance between two vectors.
@@ -203,8 +203,8 @@ moveEndPoints :: Move -> SimulationState -> (Vector3, Vector3)
 moveEndPoints move st = (from, from ^+^ delta)
   where
     (from, delta) = case move of
-        MoveBinder pos del -> (binders st V.! pos, del)
-        MoveBead pos del -> (beads st V.! pos, del)
+        MoveBinder idx del -> (binders st V.! idx, del)
+        MoveBead idx del -> (beads st V.! idx, del)
 
 -- |Computes the energy gain caused by a move (may be negative).
 energyFromDelta :: Move -> SimulationState -> Double
