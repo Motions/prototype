@@ -97,7 +97,7 @@ genBeads (b:bs) st@(SimulationState space binders beads energy randGen) =
             newSpace = M.insert pos b space
             newBeads = V.snoc beads pos
         in genBeads bs (SimulationState newSpace binders newBeads energy newRandGen)
-    where tryGen 0 _ = error "Unable to find initialization"
+    where tryGen 0 _ = error "Unable to find initialization (beads)"
           tryGen n gen =
               let (ix, gen') = randomR (0, length atomMoves - 1) gen
                   delta = atomMoves V.! ix
@@ -110,7 +110,7 @@ genBeads (b:bs) st@(SimulationState space binders beads energy randGen) =
 genBinders :: Double -> Int -> SimulationState -> SimulationState
 genBinders radius n st = flip execState st $ replicateM_ n $ tryGen 100
     where tryGen :: Int -> State SimulationState ()
-          tryGen 0 = fail "Unable to find initialization"
+          tryGen 0 = fail "Unable to find initialization (binders)"
           tryGen n = do
               [x, y, z] <- replicateM 3 $ getRandRange (-r, r)
               let v = V3 x y z
@@ -145,7 +145,7 @@ collides pos = M.member pos . space
 intersectsChain :: Vector3 -> Vector3 -> SimulationState -> Bool
 intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st =
         let d = dist b1 b2 -- assume 0 < d <= sqrt 2
-        in d == 1 || (let crossPositions =
+        in d /= 1 && (let crossPositions =
                               case (x1 == x2, y1 == y2, z1 == z2) of
                                   (True, _, _) -> (V3 x1 y1 z2, V3 x1 y2 z1)
                                   (_, True, _) -> (V3 x1 y1 z2, V3 x2 y1 z1)
