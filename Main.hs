@@ -69,5 +69,6 @@ main = do
         <> progDesc "Perform a MCMC simulation of chromatine movements")
     outputFile <- openFile (settingsOutputFile settings) WriteMode
     input <- makeInput settings
-    writePDB outputFile (Prototype.run input)
-
+    case Prototype.run input of
+        Left e -> print e
+        Right out -> writePDB outputFile out
