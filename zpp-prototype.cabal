@@ -16,8 +16,8 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:      Prototype
-  other-modules:       Types
+  exposed-modules:     Bio.Motions.Prototype
+  other-modules:       Bio.Motions.Types
   -- other-extensions:    
   build-depends:       base >=4.8 && <4.9,
                        hPDB,
@@ -28,37 +28,31 @@ library
                        linear,
                        transformers,
                        monad-loops,
-                       bytestring
-  -- hs-source-dirs:      
+                       bytestring,
+                       mono-traversable
+  hs-source-dirs:      src
   default-language:    Haskell2010
+  ghc-options:         -Wall -O2
 
 executable prototype
   main-is:             Main.hs
   build-depends:       base >=4.8 && <4.9,
                        zpp-prototype,
-                       hPDB,
-                       containers,
-                       random,
-                       mtl,
-                       vector,
-                       linear,
-                       transformers,
-                       monad-loops,
-                       bytestring
+                       optparse-applicative,
+                       random
 
--- TODO nie duplikować zależności
-executable bench
+  default-language:    Haskell2010
+  ghc-options:         -Wall -O2
+
+benchmark bench
+  type:                exitcode-stdio-1.0
   main-is:      Benchmark.hs
   build-depends:       base >=4.8 && <4.9,
                        zpp-prototype,
+                       mtl,
                        criterion,
                        deepseq,
-                       hPDB,
-                       containers,
-                       random,
-                       mtl,
-                       vector,
-                       linear,
-                       transformers,
-                       monad-loops,
-                       bytestring
+                       random
+
+  default-language:    Haskell2010
+  ghc-options:         -W -O2
