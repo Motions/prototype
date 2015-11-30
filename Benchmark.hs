@@ -49,7 +49,7 @@ main :: IO ()
 main = do
     let Input{..} = globalParams
     let stg ran = generate ran inputRadius inputNumBinders
-    let chain = force $ loadChain inputChainLength inputLamins inputBinders
+    chain <- evaluate $ force $ loadChain inputChainLength inputLamins inputBinders
 
     chainRan <- newStdGen
     let chainTest = (stg chainRan, chain)
