@@ -151,20 +151,20 @@ collides :: Vector3 -> SimulationState -> Bool
 collides pos = M.member pos . space
 
 intersectsChain :: Vector3 -> Vector3 -> SimulationState -> Bool
-intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) SimulationState{..} = d /= 1 && areChainNeighbors
+intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) SimulationState{..} = d /= 1 && chainCrossed
   where
     d = dist b1 b2 -- assume 0 < d <= sqrt 2
-    crossPositions@[fstPos, sndPos]
+    chainCrossed =
+        all (`elem` [Just NormBead, Just LBBead, Just BBBead]) ((`M.lookup` space) <$> crossPositions)
+        && case V.elemIndex fstCrossPos beads of
+            Nothing -> error "bead in space but not in chain"
+            Just ix -> sndCrossPos `elem` [beads V.! (ix - 1) | ix > 0]
+                                       ++ [beads V.! (ix + 1) | ix < olength beads - 1]
+    crossPositions@[fstCrossPos, sndCrossPos]
         | x1 == x2 = [V3 x1 y1 z2, V3 x1 y2 z1]
         | y1 == y2 = [V3 x1 y1 z2, V3 x2 y1 z1]
         | z1 == z2 = [V3 x1 y2 z1, V3 x2 y1 z1]
         | otherwise = error "d > sqrt 2"
-    areChainNeighbors =
-        all (`elem` [Just NormBead, Just LBBead, Just BBBead]) ((`M.lookup` space) <$> crossPositions)
-        && case V.elemIndex fstPos beads of
-            Nothing -> error "bead in space but not in chain"
-            Just ix -> sndPos `elem` [beads V.! (ix - 1) | ix > 0]
-                            ++ [beads V.! (ix + 1) | ix < olength beads - 1]
 
 -- |Checks whether a move would cause a collision
 moveCollides :: Move -> SimulationState -> Bool
