@@ -151,25 +151,19 @@ collides :: Vector3 -> SimulationState -> Bool
 collides pos = M.member pos . space
 
 intersectsChain :: Vector3 -> Vector3 -> SimulationState -> Bool
-intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) st =
-        let d = dist b1 b2 -- assume 0 < d <= sqrt 2
-        in d /= 1 && (let crossPositions =
-                              case (x1 == x2, y1 == y2, z1 == z2) of
-                                  (True, _, _) -> (V3 x1 y1 z2, V3 x1 y2 z1)
-                                  (_, True, _) -> (V3 x1 y1 z2, V3 x2 y1 z1)
-                                  (_, _, True) -> (V3 x1 y2 z1, V3 x2 y1 z1)
-                                  (_, _, _   ) -> error "d > sqrt 2"
-                      in areChainNeighbors crossPositions)
-    where areChainNeighbors (fstPos, sndPos) =
-              let (a1, a2) = (M.lookup fstPos (space st), M.lookup sndPos (space st))
-                  chainAtoms = [Just NormBead, Just LBBead, Just BBBead]
-              in all (`elem` chainAtoms) [a1, a2]
-                 && (let chain = beads st
-                     in case V.elemIndex fstPos chain of
-                            Nothing -> error "bead in space but not in chain"
-                            Just idx -> sndPos `elem` [chain V.! (idx - 1) | idx > 0]
-                                                   ++ [chain V.! (idx + 1) | idx < olength chain - 1])
-
+intersectsChain b1@(V3 x1 y1 z1) b2@(V3 x2 y2 z2) SimulationState{..} = d /= 1 && cpOnChain && cpNeighbours
+  where
+    d = qd b1 b2 -- assume 0 < d <= 2
+    crossPositions@[fstCrossPos, sndCrossPos]
+        | x1 == x2 = [V3 x1 y1 z2, V3 x1 y2 z1]
+        | y1 == y2 = [V3 x1 y1 z2, V3 x2 y1 z1]
+        | z1 == z2 = [V3 x1 y2 z1, V3 x2 y1 z1]
+        | otherwise = error "d > sqrt 2"
+    cpOnChain = all (`elem` [Just NormBead, Just LBBead, Just BBBead]) ((`M.lookup` space) <$> crossPositions)
+    cpNeighbours = case V.elemIndex fstCrossPos beads of
+        Nothing -> error "bead in space but not in chain"
+        Just ix -> sndCrossPos `elem` [beads V.! (ix - 1) | ix > 0]
+                                   ++ [beads V.! (ix + 1) | ix < olength beads - 1]
 
 -- |Checks whether a move would cause a collision
 moveCollides :: Move -> SimulationState -> Bool
