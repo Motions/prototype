@@ -20,10 +20,12 @@ globalParams = Input
     }
 
 generate :: StdGen -> Double -> Int -> [Atom] -> SimulationState
-generate ran radius numBinders chain =
-    genSimState ran radius numBinders chain space
-        where
-            space = genSpace radius
+generate gen radius numBinders chain =
+    let (gen', gen'') = split gen
+        space = genSpace radius
+    in case genSimState gen' radius numBinders chain space of
+           Left _ -> generate gen'' radius numBinders chain
+           Right st -> st
 
 runSim :: Int -> SimulationState -> SimulationState
 runSim steps = execState (simulate steps)
