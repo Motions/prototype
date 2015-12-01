@@ -67,8 +67,8 @@ main = do
     settings <- execParser $ info (helper <*> parser)
         (fullDesc
         <> progDesc "Perform a MCMC simulation of chromatine movements")
-    outputFile <- openFile (settingsOutputFile settings) WriteMode
     input <- makeInput settings
-    case Prototype.run input of
-        Left e -> print e
-        Right out -> writePDB outputFile out
+    withFile (settingsOutputFile settings) WriteMode $ \outputFile ->
+        case Prototype.run input of
+            Left e -> print e
+            Right out -> writePDB outputFile out
