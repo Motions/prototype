@@ -71,4 +71,7 @@ main = do
     withFile (settingsOutputFile settings) WriteMode $ \outputFile ->
         case Prototype.run input of
             Left e -> print e
-            Right out -> writePDB outputFile out
+            Right out -> do
+                putStrLn $ "gyration radius: " ++ show (gyrationRadius out)
+                putStrLn $ "energy:          " ++ show (energy out)
+                writePDB outputFile out
