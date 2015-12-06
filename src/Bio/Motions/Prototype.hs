@@ -16,7 +16,6 @@ import qualified Data.Vector.Unboxed as V
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Maybe
 import Control.Monad.Except
-import Control.Monad.Loops
 import qualified Data.Map.Strict as M
 import Linear
 import Data.Ord
@@ -256,20 +255,18 @@ applyDelta move = do
             in  coef * (func front + func back)
 
 simulateStep :: MonadState SimulationState m => m ()
-simulateStep = selectMove >>= applyDelta
-    where
-        selectMove = do
-            m <- findDelta
-            r <- gets (energyFromDelta m) >>= checkE
-            if r then return m
-                else selectMove
-        findDelta = untilJust $ runMaybeT createRandomDelta
-        checkE delta
-            | delta >= 0 = return True
-            | otherwise = do
-                r <- getRandRange (0, 1)
-                return $ r < exp (delta * _DELTA)
-        _DELTA = 2
+simulateStep = runMaybeT selectMove >>= mapM_ applyDelta
+  where
+    selectMove = do
+        m <- createRandomDelta
+        gets (energyFromDelta m) >>= checkE >>= guard
+        return m
+    checkE delta
+        | delta >= 0 = return True
+        | otherwise = do
+            r <- getRandRange (0, 1)
+            return $ r < exp (delta * _DELTA)
+    _DELTA = 2
 
 simulate :: MonadState SimulationState m => Int -> m ()
 simulate = flip replicateM_ simulateStep
