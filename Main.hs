@@ -3,7 +3,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 import Bio.Motions.Prototype as Prototype
 import Control.Monad.State.Strict
-import Options.Applicative as Opt
+import Options.Applicative
 import System.IO
 import System.Random
 import Control.Lens
@@ -16,6 +16,7 @@ data Settings = Settings
     , settingsRadius :: !Double
     , settingsNumBinders :: !Int
     , settingsNumSteps :: !Int
+    , settingsWriteIntermediateStates :: !Bool
     }
 
 data Counter = Counter
@@ -60,6 +61,10 @@ parser = Settings
         <> metavar "STEPS"
         <> help "Number of simulaton steps"
         <> value 100000)
+    <*> switch
+        (long "intermediate-states"
+        <> short 'i'
+        <> help "Whether to write the intermediate states to the output file")
 
 makeInput :: Settings -> IO Input
 makeInput Settings{..} = do
@@ -72,7 +77,7 @@ makeInput Settings{..} = do
     inputRandGen <- newStdGen
     return Input{..}
 
-runAndWrite :: (MonadState SimulationState m, MonadIO m) => Handle -> StateT Counter m ()
+runAndWrite :: (MonadState SimulationState m, MonadIO m) => Maybe Handle -> StateT Counter m ()
 runAndWrite handle = do
     counterNumSteps += 1
 
@@ -82,17 +87,18 @@ runAndWrite handle = do
 
     when (oldEnergy /= newEnergy) $ pushPDB handle
 
-pushPDB :: (MonadState SimulationState m, MonadIO m) => Handle -> StateT Counter m ()
-pushPDB handle = do
-    st <- lift get
+pushPDB :: (MonadState SimulationState m, MonadIO m) => Maybe Handle -> StateT Counter m ()
+pushPDB Nothing = return ()
+pushPDB (Just handle) = do
+    st@SimulationState{..} <- lift get
 
     headerSequenceNumber <- use counterNumFrames
     headerStep <- use counterNumSteps
-    let headerTitle = "chromosome;bonds=" ++ show (energy st)
+    let headerTitle = "chromosome;bonds=" ++ show energy
 
     liftIO $ do
-        putStrLn $ "gyration radius: " ++ show (gyrationRadius st)
-        putStrLn $ "energy:          " ++ show (energy st)
+        putStrLn $ "gyration radius: " ++ show gyrationRadius
+        putStrLn $ "energy:          " ++ show energy
         writePDB handle Header{..} st
         hPutStrLn handle "END"
 
@@ -109,5 +115,9 @@ main = do
             Left e -> print e
             Right st ->
                 void $ flip execStateT st $ flip execStateT (Counter 0 0) $ do
-                    replicateM_ (settingsNumSteps settings) $ runAndWrite outputFile
-                    pushPDB outputFile
+                    replicateM_ (settingsNumSteps settings) $ runAndWrite $
+                        if settingsWriteIntermediateStates settings then
+                            Just outputFile
+                        else
+                            Nothing
+                    pushPDB $ Just outputFile
