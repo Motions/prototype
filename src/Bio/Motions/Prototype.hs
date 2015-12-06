@@ -1,17 +1,17 @@
 {-# LANGUAGE TupleSections, RecordWildCards, OverloadedStrings, FlexibleContexts, ViewPatterns #-}
 module Bio.Motions.Prototype(
     module Types,
+    module PDB,
     simulate,
-    writePDB,
     run,
     genSimState,
     genSpace,
-    loadChain) where
-import System.IO
+    loadChain,
+    simulateStep,
+    initialize) where
 import System.Random
 import Data.Maybe
 import Data.List
-import Data.Foldable
 import qualified Data.Vector.Unboxed as V
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Maybe
@@ -19,11 +19,10 @@ import Control.Monad.Except
 import qualified Data.Map.Strict as M
 import Linear
 import Data.Ord
-import qualified Bio.PDB.EventParser.PDBEvents as PE
-import qualified Bio.PDB.EventParser.PDBEventPrinter as PP
 import Data.MonoTraversable
 
 import Bio.Motions.Types as Types
+import Bio.Motions.PDB as PDB
 
 atomMoves :: V.Vector Vector3
 atomMoves = V.fromList [V3 x y z | list@[x,y,z] <- replicateM 3 [-1,0,1],
@@ -271,45 +270,12 @@ simulateStep = runMaybeT selectMove >>= mapM_ applyDelta
 simulate :: MonadState SimulationState m => Int -> m ()
 simulate = flip replicateM_ simulateStep
 
-writePDB :: Handle -> SimulationState -> IO ()
-writePDB handle SimulationState{..} =
-    writeHeader >> doWrite 0 beads >> doWrite chainLen binders >> writeConect (chainLen - 1)
-        where writeHeader = PP.print handle (PE.HEADER "aa" "bb" "cc") >>   --TODO
-                            PP.print handle (PE.TITLE 0 "TODO")    --title jako argument?
-              writeConect n = traverse_ (\i -> PP.print handle $ PE.CONECT [i, i+1]) [1..n]
-              doWrite offset = traverse_ (PP.print handle . atomMap) . getAtoms offset
-              getAtoms :: Int -> V.Vector Vector3 -> [(Int, Vector3, Atom)]
-              getAtoms offset = zipWith (\i pos -> (i, pos, space M.! pos)) [offset..] . otoList
-              atomMap (i, V3 x y z, atom) = PE.ATOM {
-                  no = i,
-                  atomtype = getName atom,
-                  restype = getRes atom,
-                  chain = ' ', --na pewno puste
-                  resid = i, --oni tu mają drugi raz at_nr, trochę dziwnie
-                  resins = ' ', --chyba
-                  altloc = ' ', --na pewno puste
-                  coords = PE.Vector3 (fromIntegral x) (fromIntegral y) (fromIntegral z),
-                  occupancy = 0,  --to i następne to te 2 zera u nich na końcu
-                  bfactor = 0,  --to jest 'tempFactor' z PDB spec, ustawiają
-                  segid = "",   --te 3 rzeczy u nich w ogóle nie istnieją
-                  elt = "",
-                  charge = "",
-                  hetatm = False --musi być false
-                  }
-              getName Binder = "O"
-              getName Lamina = "P"
-              getName _ = "C"   --beads
-              getRes BBBead = "BOU"
-              getRes LBBead = "LAM"
-              getRes Binder = "BIN"
-              getRes Lamina = "LAM"
-              getRes NormBead = "UNB"
-              chainLen = olength beads
-
-
-run :: Input -> Either String SimulationState
-run Input{..} = runExcept $ execState (replicateM_ inputNumSteps simulateStep) <$> st
+initialize :: Input -> Either String SimulationState
+initialize Input{..} = runExcept st
   where
     st = genSimState inputRandGen inputRadius inputNumBinders chain space
     chain = loadChain inputChainLength inputLamins inputBinders
     space = genSpace inputRadius
+
+run :: Input -> Either String SimulationState
+run input@Input{..} = execState (replicateM_ inputNumSteps simulateStep) <$> initialize input

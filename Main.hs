@@ -1,8 +1,12 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
 import Bio.Motions.Prototype as Prototype
-import Options.Applicative
+import Control.Monad.State.Strict
+import Options.Applicative as Opt
 import System.IO
 import System.Random
+import Control.Lens
 
 data Settings = Settings
     { settingsChainLength :: !Int 
@@ -14,6 +18,12 @@ data Settings = Settings
     , settingsNumSteps :: !Int
     }
 
+data Counter = Counter
+    { _counterNumSteps :: !Int
+    , _counterNumFrames :: !Int
+    }
+makeLenses ''Counter
+
 parser :: Parser Settings
 parser = Settings
     <$> option auto
@@ -21,10 +31,10 @@ parser = Settings
         <> short 'l'
         <> help "Chain length"
         <> value 512)
-    <*> argument str
+    <*> strArgument
         (metavar "LAMIN-BSITES"
         <> help "File containing the lamin binding sites")
-    <*> argument str
+    <*> strArgument
         (metavar "BINDER-BSITES"
         <> help "File containing the regular binding sites")
     <*> option str
@@ -62,6 +72,32 @@ makeInput Settings{..} = do
     inputRandGen <- newStdGen
     return Input{..}
 
+runAndWrite :: (MonadState SimulationState m, MonadIO m) => Handle -> StateT Counter m ()
+runAndWrite handle = do
+    counterNumSteps += 1
+
+    oldEnergy <- lift $ gets energy
+    lift simulateStep
+    newEnergy <- lift $ gets energy
+
+    when (oldEnergy /= newEnergy) $ pushPDB handle
+
+pushPDB :: (MonadState SimulationState m, MonadIO m) => Handle -> StateT Counter m ()
+pushPDB handle = do
+    st <- lift get
+
+    headerSequenceNumber <- use counterNumFrames
+    headerStep <- use counterNumSteps
+    let headerTitle = "chromosome;bonds=" ++ show (energy st)
+
+    liftIO $ do
+        putStrLn $ "gyration radius: " ++ show (gyrationRadius st)
+        putStrLn $ "energy:          " ++ show (energy st)
+        writePDB handle Header{..} st
+        hPutStrLn handle "END"
+
+    counterNumFrames += 1
+
 main :: IO ()
 main = do
     settings <- execParser $ info (helper <*> parser)
@@ -69,9 +105,9 @@ main = do
         <> progDesc "Perform a MCMC simulation of chromatine movements")
     input <- makeInput settings
     withFile (settingsOutputFile settings) WriteMode $ \outputFile ->
-        case Prototype.run input of
+        case initialize input of
             Left e -> print e
-            Right out -> do
-                putStrLn $ "gyration radius: " ++ show (gyrationRadius out)
-                putStrLn $ "energy:          " ++ show (energy out)
-                writePDB outputFile out
+            Right st ->
+                void $ flip execStateT st $ flip execStateT (Counter 0 0) $ do
+                    replicateM_ (settingsNumSteps settings) $ runAndWrite outputFile
+                    pushPDB outputFile
