@@ -22,7 +22,7 @@ data Header = Header
 
 writePDB :: Handle -> Header -> SimulationState -> IO ()
 writePDB handle Header{..} SimulationState{..} =
-    writeHeader >> doWrite 0 beads >> doWrite chainLen binders >> writeConect (chainLen - 1)
+    writeHeader >> doWrite 1 beads >> doWrite (chainLen + 1) binders >> writeConect (chainLen - 1)
   where
     writeHeader = PP.print handle header >> PP.print handle title
     writeConect n = traverse_ (\i -> PP.print handle $ PE.CONECT [i, i+1]) [1..n]
@@ -39,7 +39,7 @@ writePDB handle Header{..} SimulationState{..} =
       resid = i, --oni tu mają drugi raz at_nr, trochę dziwnie
       resins = ' ', --chyba
       altloc = ' ', --na pewno puste
-      coords = PE.Vector3 (fromIntegral x) (fromIntegral y) (fromIntegral z),
+      coords = 3 * PE.Vector3 (fromIntegral x) (fromIntegral y) (fromIntegral z),
       occupancy = 0,  --to i następne to te 2 zera u nich na końcu
       bfactor = 0,  --to jest 'tempFactor' z PDB spec, ustawiają
       segid = "",   --te 3 rzeczy u nich w ogóle nie istnieją
