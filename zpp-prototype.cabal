@@ -18,6 +18,7 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Bio.Motions.Prototype
   other-modules:       Bio.Motions.Types
+                       Bio.Motions.PDB
   -- other-extensions:    
   build-depends:       base >=4.8 && <4.9,
                        hPDB,
@@ -39,7 +40,9 @@ executable prototype
   build-depends:       base >=4.8 && <4.9,
                        zpp-prototype,
                        optparse-applicative,
-                       random
+                       random,
+                       mtl,
+                       lens
 
   default-language:    Haskell2010
   ghc-options:         -Wall -O2

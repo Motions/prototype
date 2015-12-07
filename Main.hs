@@ -1,8 +1,12 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
 import Bio.Motions.Prototype as Prototype
+import Control.Monad.State.Strict
 import Options.Applicative
 import System.IO
 import System.Random
+import Control.Lens
 
 data Settings = Settings
     { settingsChainLength :: !Int 
@@ -12,7 +16,14 @@ data Settings = Settings
     , settingsRadius :: !Double
     , settingsNumBinders :: !Int
     , settingsNumSteps :: !Int
+    , settingsWriteIntermediateStates :: !Bool
     }
+
+data Counter = Counter
+    { _counterNumSteps :: !Int
+    , _counterNumFrames :: !Int
+    }
+makeLenses ''Counter
 
 parser :: Parser Settings
 parser = Settings
@@ -21,10 +32,10 @@ parser = Settings
         <> short 'l'
         <> help "Chain length"
         <> value 512)
-    <*> argument str
+    <*> strArgument
         (metavar "LAMIN-BSITES"
         <> help "File containing the lamin binding sites")
-    <*> argument str
+    <*> strArgument
         (metavar "BINDER-BSITES"
         <> help "File containing the regular binding sites")
     <*> option str
@@ -50,6 +61,10 @@ parser = Settings
         <> metavar "STEPS"
         <> help "Number of simulaton steps"
         <> value 100000)
+    <*> switch
+        (long "intermediate-states"
+        <> short 'i'
+        <> help "Whether to write the intermediate states to the output file")
 
 makeInput :: Settings -> IO Input
 makeInput Settings{..} = do
@@ -62,6 +77,33 @@ makeInput Settings{..} = do
     inputRandGen <- newStdGen
     return Input{..}
 
+runAndWrite :: (MonadState SimulationState m, MonadIO m) => Maybe Handle -> StateT Counter m ()
+runAndWrite handle = do
+    counterNumSteps += 1
+
+    oldEnergy <- lift $ gets energy
+    lift simulateStep
+    newEnergy <- lift $ gets energy
+
+    when (oldEnergy /= newEnergy) $ pushPDB handle
+
+pushPDB :: (MonadState SimulationState m, MonadIO m) => Maybe Handle -> StateT Counter m ()
+pushPDB Nothing = return ()
+pushPDB (Just handle) = do
+    st@SimulationState{..} <- lift get
+
+    headerSequenceNumber <- use counterNumFrames
+    headerStep <- use counterNumSteps
+    let headerTitle = "chromosome;bonds=" ++ show energy
+
+    liftIO $ do
+        putStrLn $ "gyration radius: " ++ show gyrationRadius
+        putStrLn $ "energy:          " ++ show energy
+        writePDB handle Header{..} st
+        hPutStrLn handle "END"
+
+    counterNumFrames += 1
+
 main :: IO ()
 main = do
     settings <- execParser $ info (helper <*> parser)
@@ -69,9 +111,13 @@ main = do
         <> progDesc "Perform a MCMC simulation of chromatine movements")
     input <- makeInput settings
     withFile (settingsOutputFile settings) WriteMode $ \outputFile ->
-        case Prototype.run input of
+        case initialize input of
             Left e -> print e
-            Right out -> do
-                putStrLn $ "gyration radius: " ++ show (gyrationRadius out)
-                putStrLn $ "energy:          " ++ show (energy out)
-                writePDB outputFile out
+            Right st ->
+                void $ flip execStateT st $ flip execStateT (Counter 0 0) $ do
+                    replicateM_ (settingsNumSteps settings) $ runAndWrite $
+                        if settingsWriteIntermediateStates settings then
+                            Just outputFile
+                        else
+                            Nothing
+                    pushPDB $ Just outputFile
