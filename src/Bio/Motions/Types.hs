@@ -1,7 +1,6 @@
 {-# LANGUAGE RecordWildCards, DeriveGeneric #-}
 module Bio.Motions.Types where
 
-import System.Random
 import qualified Data.Map.Strict as M
 import qualified Data.Vector.Unboxed as V
 import Linear as Lin
@@ -14,13 +13,15 @@ type Vector3 = Lin.V3 Int
 
 type Space = M.Map Vector3 Atom
 
+data SimRand = RInt (Int, Int) Int | RDouble (Double, Double) Double
+
 data SimulationState = SimulationState {
                      space :: !Space,
                      binders :: !(V.Vector Vector3),
                      beads :: !(V.Vector Vector3),
                      energy :: {-# UNPACK #-} !Double,
                      gyrationRadius :: {-# UNPACK #-} !Double,
-                     randgen :: !StdGen }
+                     randlist :: [SimRand] }
 
 instance Show SimulationState where
         show SimulationState{..} = unlines [
@@ -39,5 +40,5 @@ data Input = Input
     , inputRadius :: Double
     , inputNumBinders :: Int
     , inputNumSteps :: Int
-    , inputRandGen :: StdGen
+    , inputRandList :: [SimRand]
     }

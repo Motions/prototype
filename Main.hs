@@ -5,13 +5,13 @@ import Bio.Motions.Prototype as Prototype
 import Control.Monad.State.Strict
 import Options.Applicative
 import System.IO
-import System.Random
 import Control.Lens
 
 data Settings = Settings
     { settingsChainLength :: !Int 
     , settingsLaminsFile :: !FilePath
     , settingsBindersFile :: !FilePath
+    , settingsRandomFile :: !FilePath
     , settingsOutputFile :: !FilePath
     , settingsRadius :: !Double
     , settingsNumBinders :: !Int
@@ -38,6 +38,9 @@ parser = Settings
     <*> strArgument
         (metavar "BINDER-BSITES"
         <> help "File containing the regular binding sites")
+    <*> strArgument
+        (metavar "RANDOM"
+        <> help "File containing random numbers")
     <*> option str
         (long "output"
          <> short 'o'
@@ -66,6 +69,13 @@ parser = Settings
         <> short 'i'
         <> help "Whether to write the intermediate states to the output file")
 
+
+loadRandom :: FilePath -> IO [SimRand]
+loadRandom path = map (f.words) . lines <$> readFile path 
+    where f ["I", a, b, x] = RInt (read a, read b) (read x)
+          f ["D", a, b, x] = RDouble (read a, read b) (read x)
+
+
 makeInput :: Settings -> IO Input
 makeInput Settings{..} = do
     let inputChainLength = settingsChainLength
@@ -74,7 +84,7 @@ makeInput Settings{..} = do
         inputNumSteps = settingsNumSteps
     inputLamins <- map read . lines <$> readFile settingsLaminsFile
     inputBinders <- map read . lines <$> readFile settingsBindersFile
-    inputRandGen <- newStdGen
+    inputRandList <- loadRandom settingsRandomFile
     return Input{..}
 
 runAndWrite :: (MonadState SimulationState m, MonadIO m) => Maybe Handle -> StateT Counter m ()

@@ -9,7 +9,6 @@ module Bio.Motions.Prototype(
     loadChain,
     simulateStep,
     initialize) where
-import System.Random
 import Data.Maybe
 import Data.List
 import qualified Data.Vector.Unboxed as V
@@ -28,19 +27,41 @@ atomMoves :: V.Vector Vector3
 atomMoves = V.fromList [V3 x y z | list@[x,y,z] <- replicateM 3 [-1,0,1],
                                                    sum (map abs list) `elem` [1,2]]
 
-getRandWith :: MonadState SimulationState m => (StdGen -> (a, StdGen)) -> m a
+
+class SimRandom a where
+    sRand :: SimRand -> a
+    sRandRange :: (a, a) -> SimRand -> a
+
+instance SimRandom Int where
+    sRand = error "sRand Int"
+    sRandRange range (RInt range' x)
+        | range == range' = x
+        | otherwise = error $ "sRand Int range: wanted " ++ show range ++ " got " ++ show range'
+
+instance SimRandom Bool where
+    sRand (RInt (0, 1) x) = x == 1
+    sRandRange = undefined
+
+instance SimRandom Double where
+    sRand = error "sRand Double"
+    sRandRange range (RDouble range' x)
+        | range == range' = x
+        | otherwise = error $ "sRand Double range: wanted " ++ show range ++ " got " ++ show range'
+
+
+getRandWith :: (MonadState SimulationState m) => (SimRand -> r) -> m r
 getRandWith func = do
     st <- get
-    let randGen = randgen st
-        (randVal, newRandGen) = func randGen
-    put st { randgen = newRandGen }
+    let r:rs = randlist st
+        randVal = func r
+    put st { randlist = rs }
     return randVal
 
-getRand :: (MonadState SimulationState m, Random a) => m a
-getRand = getRandWith random
+getRand :: (MonadState SimulationState m, SimRandom a) => m a
+getRand = getRandWith sRand
 
-getRandRange :: (MonadState SimulationState m, Random a) => (a, a) -> m a
-getRandRange range = getRandWith $ randomR range
+getRandRange :: (MonadState SimulationState m, SimRandom a) => (a, a) -> m a
+getRandRange range = getRandWith $ sRandRange range
 
 getRandFromVec :: (MonadState SimulationState m, V.Unbox a) => V.Vector a -> m a
 getRandFromVec vec = do
@@ -87,8 +108,8 @@ recalculateEnergy st@SimulationState{..} = st {
     prefix (idx, bead) = V.sum $ V.map (dist bead) $ V.unsafeTake idx beads
     coef = 2 / fromIntegral (V.length beads * (V.length beads - 1))
 
-genSimState :: MonadError String m => StdGen -> Double -> Int -> [Atom] -> Space -> m SimulationState
-genSimState randGen radius numBinders (b:beads) space = recalculateEnergy <$> st'
+genSimState :: (MonadError String m) => [SimRand] -> Double -> Int -> [Atom] -> Space -> m SimulationState
+genSimState randList radius numBinders (b:beads) space = recalculateEnergy <$> st'
   where
     st = SimulationState {
         space = M.insert zero b space,
@@ -96,7 +117,7 @@ genSimState randGen radius numBinders (b:beads) space = recalculateEnergy <$> st
         beads = V.singleton zero,
         energy = 0,
         gyrationRadius = 0,
-        randgen = randGen }
+        randlist = randList }
     st' = flip execStateT st $ genBeads beads >> genBinders radius numBinders
 genSimState _ _ _ [] _ = throwError "Empty beads list"
 
@@ -273,7 +294,7 @@ simulate = flip replicateM_ simulateStep
 initialize :: Input -> Either String SimulationState
 initialize Input{..} = runExcept st
   where
-    st = genSimState inputRandGen inputRadius inputNumBinders chain space
+    st = genSimState inputRandList inputRadius inputNumBinders chain space
     chain = loadChain inputChainLength inputLamins inputBinders
     space = genSpace inputRadius
 
