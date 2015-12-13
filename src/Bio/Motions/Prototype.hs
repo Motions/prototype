@@ -48,20 +48,15 @@ getRandFromVec vec = do
         return $ vec V.! idx
 
 
+dist_from_mi :: Vector3 -> Int -> Double
+dist_from_mi (V3 x y z) mi = sqrt $ fromIntegral $ ((x-mi)^2 + (y-mi)^2 + (z-mi)^2)
+
 spherePoints :: Double -> [Vector3]
-spherePoints radius = do
-  let r = (ceiling radius::Int) + 2
-  x <- [-r .. r]
-  let y_max = ceiling $ sqrt $ sq (radius + 2) - fromIntegral (sq x)
-  y <- [-y_max .. y_max]
-  let z_square_min = sq (radius - 2) - fromIntegral (sq x + sq y)
-  let z_square_max = sq (radius + 2) - fromIntegral (sq x + sq y)
-  let lower_bound = if z_square_min < 0 then 0 else ceiling $ sqrt z_square_min
-  let upper_bound = if z_square_max < 0 then -1 else floor $ sqrt z_square_max
-  abs_z <- [lower_bound .. upper_bound]
-  z <- nub [abs_z, -abs_z]
-  return $ V3 x y z
-  where sq x = x * x
+spherePoints r = [V3 x y z | x <- [0 .. bound - 1], y <- [0 .. bound - 1], z <- [0 .. bound - 1],
+  (abs ((dist_from_mi (V3 x y z) mid) - (fromIntegral mid) + 1)) <= 2] where
+  ra = ceiling r
+  bound = 2*ra + 2
+  mid = bound `div` 2
 
 genSpace :: Double -> Space
 genSpace radius = M.fromList $ map (,Lamina) $ spherePoints radius
@@ -110,7 +105,7 @@ genBeads (b:bs) = do
         st@SimulationState{..} <- get
         let newSpace = M.insert pos b space
             newBeads = V.snoc beads pos
-        put $ st { space = newSpace, beads = newBeads } 
+        put $ st { space = newSpace, beads = newBeads }
         genBeads bs
     where tryGen 0 = throwError "Unable to find initialization (beads)"
           tryGen n = do
