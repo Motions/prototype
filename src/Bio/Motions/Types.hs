@@ -36,7 +36,7 @@ data Input = Input
     { inputChainLength :: Int
     , inputLamins :: [Int]
     , inputBinders :: [Int]
-    , inputRadius :: Double
+    , inputRadius :: Int
     , inputNumBinders :: Int
     , inputNumSteps :: Int
     , inputRandGen :: StdGen

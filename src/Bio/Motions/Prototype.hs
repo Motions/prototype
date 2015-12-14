@@ -47,18 +47,19 @@ getRandFromVec vec = do
         idx <- getRandRange (0, olength vec - 1)
         return $ vec V.! idx
 
+middle :: Int -> Vector3
+middle r = V3 m m m
+  where
+    m = fromIntegral $ r + 1
 
-dist_from_mi :: Vector3 -> Int -> Double
-dist_from_mi (V3 x y z) mi = sqrt $ fromIntegral $ ((x-mi)^2 + (y-mi)^2 + (z-mi)^2)
+bound :: Int -> Int
+bound r = 2 * r + 2
 
-spherePoints :: Double -> [Vector3]
-spherePoints r = [V3 x y z | x <- [0 .. bound - 1], y <- [0 .. bound - 1], z <- [0 .. bound - 1],
-  (abs ((dist_from_mi (V3 x y z) mid) - (fromIntegral mid) + 1)) <= 2] where
-  ra = ceiling r
-  bound = 2*ra + 2
-  mid = bound `div` 2
+spherePoints :: Int -> [Vector3]
+spherePoints r = [V3 x y z | [x, y, z] <- replicateM 3 [0 .. bound r - 1],
+                             abs (dist (V3 x y z) (middle r) - fromIntegral r) <= 2]
 
-genSpace :: Double -> Space
+genSpace :: Int -> Space
 genSpace radius = M.fromList $ map (,Lamina) $ spherePoints radius
 
 fillGaps :: Int -> [(Int, Atom)] -> [Atom]
@@ -82,17 +83,18 @@ recalculateEnergy st@SimulationState{..} = st {
     prefix (idx, bead) = V.sum $ V.map (dist bead) $ V.unsafeTake idx beads
     coef = 2 / fromIntegral (V.length beads * (V.length beads - 1))
 
-genSimState :: MonadError String m => StdGen -> Double -> Int -> [Atom] -> Space -> m SimulationState
+genSimState :: MonadError String m => StdGen -> Int -> Int -> [Atom] -> Space -> m SimulationState
 genSimState randGen radius numBinders (b:beads) space = recalculateEnergy <$> st'
   where
     st = SimulationState {
-        space = M.insert zero b space,
+        space = M.insert mid b space,
         binders = V.empty,
-        beads = V.singleton zero,
+        beads = V.singleton mid,
         energy = 0,
         gyrationRadius = 0,
         randgen = randGen }
     st' = flip execStateT st $ genBeads beads >> genBinders radius numBinders
+    mid = middle radius
 genSimState _ _ _ [] _ = throwError "Empty beads list"
 
 maxGenRetries :: Int
@@ -118,19 +120,18 @@ genBeads (b:bs) = do
                   then tryGen (n - 1)
                   else return newPos
 
-genBinders :: (MonadState SimulationState m, MonadError String m) => Double -> Int -> m ()
+genBinders :: (MonadState SimulationState m, MonadError String m) => Int -> Int -> m ()
 genBinders radius n0 = replicateM_ n0 $ tryGen maxGenRetries
     where tryGen 0 = throwError "Unable to find initialization (binders)"
           tryGen n = do
-              [x, y, z] <- replicateM 3 $ getRandRange (-r, r)
+              [x, y, z] <- replicateM 3 $ getRandRange (0, bound radius)
               let v = V3 x y z
               st <- get
-              if dist v zero > fromIntegral (r - 2) || collides v st
+              if dist v (middle radius) > fromIntegral (radius - 2) || collides v st
                   then tryGen (n - 1)
                   else let space' = M.insert v Binder $ space st
                            binders' = V.snoc (binders st) v
                        in put st { space = space', binders = binders' }
-          r = ceiling radius :: Int
 
 
 createRandomDelta :: MonadState SimulationState m => MaybeT m Move

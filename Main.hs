@@ -13,7 +13,7 @@ data Settings = Settings
     , settingsLaminsFile :: !FilePath
     , settingsBindersFile :: !FilePath
     , settingsOutputFile :: !FilePath
-    , settingsRadius :: !Double
+    , settingsRadius :: !Int
     , settingsNumBinders :: !Int
     , settingsNumSteps :: !Int
     , settingsWriteIntermediateStates :: !Bool
