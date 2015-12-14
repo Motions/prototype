@@ -13,7 +13,7 @@ data Settings = Settings
     , settingsBindersFile :: !FilePath
     , settingsRandomFile :: !FilePath
     , settingsOutputFile :: !FilePath
-    , settingsRadius :: !Double
+    , settingsRadius :: !Int
     , settingsNumBinders :: !Int
     , settingsNumSteps :: !Int
     , settingsWriteIntermediateStates :: !Bool
