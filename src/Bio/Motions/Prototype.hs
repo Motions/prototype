@@ -48,9 +48,7 @@ getRandFromVec vec = do
         return $ vec V.! idx
 
 middle :: Int -> Vector3
-middle r = V3 m m m
-  where
-    m = fromIntegral $ r + 1
+middle r = let m = r + 1 in V3 m m m
 
 bound :: Int -> Int
 bound r = 2 * r + 2
