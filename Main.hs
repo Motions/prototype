@@ -1,22 +1,38 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE LambdaCase #-}
 import Bio.Motions.Prototype as Prototype
 import Control.Monad.State.Strict
+import Control.Monad.Except
 import Options.Applicative
 import System.IO
 import System.Random
 import Control.Lens
+import Control.Monad.Random
+import qualified Data.Serialize as Serialize
+import qualified Data.ByteString as BS
 
-data Settings = Settings
-    { settingsChainLength :: !Int 
-    , settingsLaminsFile :: !FilePath
-    , settingsBindersFile :: !FilePath
-    , settingsOutputFile :: !FilePath
-    , settingsRadius :: !Int
-    , settingsNumBinders :: !Int
-    , settingsNumSteps :: !Int
-    , settingsWriteIntermediateStates :: !Bool
+data Settings
+    = Initialize InitializeSettings
+    | Simulate SimulateSettings
+
+data InitializeSettings = InitializeSettings
+    { settingsLaminsFile :: FilePath
+    , settingsBindersFile :: FilePath
+    , settingsRadius :: Int
+    , settingsNumBinders :: Int
+    , settingsChainLength :: Int
+    , settingsInitOutputFile :: FilePath
+    }
+
+data SimulateSettings = SimulateSettings
+    { settingsPDBFile :: FilePath
+    , settingsInputFile :: FilePath
+    , settingsOutputFile :: FilePath
+    , settingsNumSteps :: Int
+    , settingsWriteIntermediateStates :: Bool
     }
 
 data Counter = Counter
@@ -25,24 +41,14 @@ data Counter = Counter
     }
 makeLenses ''Counter
 
-parser :: Parser Settings
-parser = Settings
-    <$> option auto
-        (long "chain-length"
-        <> short 'l'
-        <> help "Chain length"
-        <> value 512)
-    <*> strArgument
+initializeParser :: Parser InitializeSettings
+initializeParser = InitializeSettings
+    <$> strArgument
         (metavar "LAMIN-BSITES"
         <> help "File containing the lamin binding sites")
     <*> strArgument
         (metavar "BINDER-BSITES"
         <> help "File containing the regular binding sites")
-    <*> option str
-        (long "output"
-         <> short 'o'
-         <> metavar "OUTPUT"
-         <> help "The output file")
     <*> option auto
         (long "radius"
         <> short 'r'
@@ -56,6 +62,34 @@ parser = Settings
         <> help "Number of binders"
         <> value 256)
     <*> option auto
+        (long "chain-length"
+        <> short 'l'
+        <> help "Chain length"
+        <> value 512)
+    <*> strOption
+        (long "output"
+        <> short 'o'
+        <> metavar "OUTPUT-FILE"
+        <> help "Output file")
+
+simulateParser :: Parser SimulateSettings
+simulateParser = SimulateSettings
+    <$> strOption
+        (long "pdb"
+        <> short 'p'
+        <> metavar "PDB-FILE"
+        <> help "PDB output file")
+    <*> strOption
+        (long "input"
+        <> short 'i'
+        <> metavar "INPUT-FILE"
+        <> help "Input file")
+    <*> strOption
+        (long "output"
+        <> short 'o'
+        <> metavar "OUTPUT-FILE"
+        <> help "Output file")
+    <*> option auto
         (long "steps"
         <> short 's'
         <> metavar "STEPS"
@@ -63,21 +97,26 @@ parser = Settings
         <> value 100000)
     <*> switch
         (long "intermediate-states"
-        <> short 'i'
+        <> short 'm'
         <> help "Whether to write the intermediate states to the output file")
 
-makeInput :: Settings -> IO Input
-makeInput Settings{..} = do
+parser :: Parser Settings
+parser = subparser
+    $  command "init" (info (Initialize <$> initializeParser)
+        (progDesc "Initialize the simulation"))
+    <> command "run" (info (Simulate <$> simulateParser)
+        (progDesc "Run the simulation"))
+
+makeInput :: InitializeSettings -> IO Input
+makeInput InitializeSettings{..} = do
     let inputChainLength = settingsChainLength
         inputRadius = settingsRadius
         inputNumBinders = settingsNumBinders
-        inputNumSteps = settingsNumSteps
     inputLamins <- map read . lines <$> readFile settingsLaminsFile
     inputBinders <- map read . lines <$> readFile settingsBindersFile
-    inputRandGen <- newStdGen
     return Input{..}
 
-runAndWrite :: (MonadState SimulationState m, MonadIO m) => Maybe Handle -> StateT Counter m ()
+runAndWrite :: (MonadSimulation m, MonadIO m) => Maybe Handle -> StateT Counter m ()
 runAndWrite handle = do
     oldEnergy <- lift $ gets energy
     lift simulateStep
@@ -87,7 +126,7 @@ runAndWrite handle = do
 
     counterNumSteps += 1
 
-pushPDB :: (MonadState SimulationState m, MonadIO m) => Maybe Handle -> StateT Counter m ()
+pushPDB :: (MonadSimulation m, MonadIO m) => Maybe Handle -> StateT Counter m ()
 pushPDB Nothing = return ()
 pushPDB (Just handle) = do
     st@SimulationState{..} <- lift get
@@ -104,21 +143,29 @@ pushPDB (Just handle) = do
 
     counterNumFrames += 1
 
-main :: IO ()
-main = do
-    settings <- execParser $ info (helper <*> parser)
-        (fullDesc
-        <> progDesc "Perform a MCMC simulation of chromatine movements")
+serialize :: FilePath -> SimulationState -> StdGen -> IO ()
+serialize file st gen = BS.writeFile file $ Serialize.encode (st, show gen)
+
+run :: Settings -> IO ()
+run (Initialize settings) = do
     input <- makeInput settings
-    withFile (settingsOutputFile settings) WriteMode $ \outputFile ->
-        case initialize input of
-            Left e -> print e
-            Right st ->
-                void $ flip execStateT st $ flip execStateT (Counter 0 0) $ do
-                    pushPDB $ Just outputFile
-                    replicateM_ (settingsNumSteps settings) $ runAndWrite $
-                        if settingsWriteIntermediateStates settings then
-                            Just outputFile
-                        else
-                            Nothing
-                    pushPDB $ Just outputFile
+    (est, gen) <- newStdGen >>= runRandT (runExceptT $ initialize input)
+    case est of
+        Left err -> hPutStrLn stderr err
+        Right st -> serialize (settingsInitOutputFile settings) st gen
+
+run (Simulate SimulateSettings{..}) = withFile settingsPDBFile WriteMode $ \pdbFile ->
+    Serialize.decode <$> BS.readFile settingsInputFile >>= \case
+        Left err -> hPutStrLn stderr err
+        Right (st, read -> gen) -> do
+            (st', gen') <- flip runRandT gen $ flip execStateT st $ flip execStateT (Counter 0 0) $ do
+                    pushPDB $ Just pdbFile
+                    replicateM_ settingsNumSteps $ runAndWrite $
+                        guard settingsWriteIntermediateStates >> Just pdbFile
+                    pushPDB $ Just pdbFile
+            serialize settingsOutputFile st' gen'
+
+main :: IO ()
+main = run =<< execParser (info (helper <*> parser)
+        (fullDesc
+        <> progDesc "Perform a MCMC simulation of chromatine movements"))

@@ -3,13 +3,11 @@ module Bio.Motions.Prototype(
     module Types,
     module PDB,
     simulate,
-    run,
     genSimState,
     genSpace,
     loadChain,
     simulateStep,
     initialize) where
-import System.Random
 import Data.Maybe
 import Data.List
 import qualified Data.Vector.Unboxed as V
@@ -20,6 +18,7 @@ import qualified Data.Map.Strict as M
 import Linear
 import Data.Ord
 import Data.MonoTraversable
+import Control.Monad.Random
 
 import Bio.Motions.Types as Types
 import Bio.Motions.PDB as PDB
@@ -28,23 +27,9 @@ atomMoves :: V.Vector Vector3
 atomMoves = V.fromList [V3 x y z | list@[x,y,z] <- replicateM 3 [-1,0,1],
                                                    sum (map abs list) `elem` [1,2]]
 
-getRandWith :: MonadState SimulationState m => (StdGen -> (a, StdGen)) -> m a
-getRandWith func = do
-    st <- get
-    let randGen = randgen st
-        (randVal, newRandGen) = func randGen
-    put st { randgen = newRandGen }
-    return randVal
-
-getRand :: (MonadState SimulationState m, Random a) => m a
-getRand = getRandWith random
-
-getRandRange :: (MonadState SimulationState m, Random a) => (a, a) -> m a
-getRandRange range = getRandWith $ randomR range
-
-getRandFromVec :: (MonadState SimulationState m, V.Unbox a) => V.Vector a -> m a
+getRandFromVec :: (V.Unbox a, MonadRandom m) => V.Vector a -> m a
 getRandFromVec vec = do
-        idx <- getRandRange (0, olength vec - 1)
+        idx <- getRandomR (0, olength vec - 1)
         return $ vec V.! idx
 
 middle :: Int -> Vector3
@@ -81,24 +66,23 @@ recalculateEnergy st@SimulationState{..} = st {
     prefix (idx, bead) = V.sum $ V.map (dist bead) $ V.unsafeTake idx beads
     coef = 2 / fromIntegral (V.length beads * (V.length beads - 1))
 
-genSimState :: MonadError String m => StdGen -> Int -> Int -> [Atom] -> Space -> m SimulationState
-genSimState randGen radius numBinders (b:beads) space = recalculateEnergy <$> st'
+genSimState :: (MonadError String m, MonadRandom m) => Int -> Int -> [Atom] -> Space -> m SimulationState
+genSimState radius numBinders (b:beads) space = recalculateEnergy <$> st'
   where
     st = SimulationState {
         space = M.insert mid b space,
         binders = V.empty,
         beads = V.singleton mid,
         energy = 0,
-        gyrationRadius = 0,
-        randgen = randGen }
+        gyrationRadius = 0 }
     st' = flip execStateT st $ genBeads beads >> genBinders radius numBinders
     mid = middle radius
-genSimState _ _ _ [] _ = throwError "Empty beads list"
+genSimState _ _ [] _ = throwError "Empty beads list"
 
 maxGenRetries :: Int
 maxGenRetries = 100
 
-genBeads :: (MonadState SimulationState m, MonadError String m) => [Atom] -> m ()
+genBeads :: (MonadSimulation m, MonadError String m) => [Atom] -> m ()
 genBeads [] = return ()
 genBeads (b:bs) = do
         pos <- tryGen maxGenRetries
@@ -109,7 +93,7 @@ genBeads (b:bs) = do
         genBeads bs
     where tryGen 0 = throwError "Unable to find initialization (beads)"
           tryGen n = do
-              idx <- getRandRange (0, olength atomMoves - 1)
+              idx <- getRandomR (0, olength atomMoves - 1)
               st <- get
               let lastPos = V.last . beads $ st
                   delta = atomMoves V.! idx
@@ -118,11 +102,11 @@ genBeads (b:bs) = do
                   then tryGen (n - 1)
                   else return newPos
 
-genBinders :: (MonadState SimulationState m, MonadError String m) => Int -> Int -> m ()
+genBinders :: (MonadSimulation m, MonadError String m) => Int -> Int -> m ()
 genBinders radius n0 = replicateM_ n0 $ tryGen maxGenRetries
     where tryGen 0 = throwError "Unable to find initialization (binders)"
           tryGen n = do
-              [x, y, z] <- replicateM 3 $ getRandRange (0, bound radius)
+              [x, y, z] <- replicateM 3 $ getRandomR (0, bound radius)
               let v = V3 x y z
               st <- get
               if dist v (middle radius) > fromIntegral (radius - 2) || collides v st
@@ -132,11 +116,11 @@ genBinders radius n0 = replicateM_ n0 $ tryGen maxGenRetries
                        in put st { space = space', binders = binders' }
 
 
-createRandomDelta :: MonadState SimulationState m => MaybeT m Move
+createRandomDelta :: MonadSimulation m => MaybeT m Move
 createRandomDelta = do
-        moveBinder <- lift getRand
+        moveBinder <- lift getRandom
         atoms <- gets $ if moveBinder then binders else beads
-        atomIdx <- lift $ getRandRange (0, olength atoms - 1)
+        atomIdx <- lift $ getRandomR (0, olength atoms - 1)
         delta <- lift $ getRandFromVec atomMoves
         let move = (if moveBinder then MoveBinder else MoveBead) atomIdx delta
         st <- get
@@ -247,7 +231,7 @@ applyDelta move = do
                 coef = 2 / fromIntegral (V.length beads * (V.length beads - 1))
             in  coef * (func front + func back)
 
-simulateStep :: MonadState SimulationState m => m ()
+simulateStep :: MonadSimulation m => m ()
 simulateStep = runMaybeT selectMove >>= mapM_ applyDelta
   where
     selectMove = do
@@ -257,19 +241,16 @@ simulateStep = runMaybeT selectMove >>= mapM_ applyDelta
     checkE delta
         | delta >= 0 = return True
         | otherwise = do
-            r <- getRandRange (0, 1)
+            r <- getRandomR (0, 1)
             return $ r < exp (delta * _DELTA)
     _DELTA = 2
 
-simulate :: MonadState SimulationState m => Int -> m ()
+simulate :: MonadSimulation m => Int -> m ()
 simulate = flip replicateM_ simulateStep
 
-initialize :: Input -> Either String SimulationState
-initialize Input{..} = runExcept st
+initialize :: (MonadRandom m, MonadError String m) => Input -> m SimulationState
+initialize Input{..} = st
   where
-    st = genSimState inputRandGen inputRadius inputNumBinders chain space
+    st = genSimState inputRadius inputNumBinders chain space
     chain = loadChain inputChainLength inputLamins inputBinders
     space = genSpace inputRadius
-
-run :: Input -> Either String SimulationState
-run input@Input{..} = execState (replicateM_ inputNumSteps simulateStep) <$> initialize input
