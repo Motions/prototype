@@ -79,13 +79,13 @@ makeInput Settings{..} = do
 
 runAndWrite :: (MonadState SimulationState m, MonadIO m) => Maybe Handle -> StateT Counter m ()
 runAndWrite handle = do
-    counterNumSteps += 1
-
     oldEnergy <- lift $ gets energy
     lift simulateStep
     newEnergy <- lift $ gets energy
 
     when (oldEnergy /= newEnergy) $ pushPDB handle
+
+    counterNumSteps += 1
 
 pushPDB :: (MonadState SimulationState m, MonadIO m) => Maybe Handle -> StateT Counter m ()
 pushPDB Nothing = return ()
@@ -115,6 +115,7 @@ main = do
             Left e -> print e
             Right st ->
                 void $ flip execStateT st $ flip execStateT (Counter 0 0) $ do
+                    pushPDB $ Just outputFile
                     replicateM_ (settingsNumSteps settings) $ runAndWrite $
                         if settingsWriteIntermediateStates settings then
                             Just outputFile
