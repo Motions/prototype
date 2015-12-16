@@ -162,7 +162,6 @@ run (Simulate SimulateSettings{..}) = withFile settingsPDBFile WriteMode $ \pdbF
                     pushPDB $ Just pdbFile
                     replicateM_ settingsNumSteps $ runAndWrite $
                         guard settingsWriteIntermediateStates >> Just pdbFile
-                    pushPDB $ Just pdbFile
             serialize settingsOutputFile st' gen'
 
 main :: IO ()
