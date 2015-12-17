@@ -63,7 +63,8 @@ benchmark bench
                        criterion,
                        deepseq,
                        MonadRandom,
-                       random
+                       random,
+                       monad-loops
 
   default-language:    Haskell2010
   ghc-options:         -W -O2

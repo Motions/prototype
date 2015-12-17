@@ -2,6 +2,8 @@
 
 module Main where
 import Criterion.Main
+import Data.Either
+import Control.Monad.Loops
 import Bio.Motions.Prototype as Prototype
 import System.Random
 import Control.Monad.State.Strict
@@ -19,16 +21,16 @@ globalParams = Input
     , inputNumBinders = 20
     }
 
-generate :: StdGen -> Int -> Int -> [Atom] -> (SimulationState, StdGen)
-generate gen radius numBinders chain =
-    let space = genSpace radius
-        (est, gen') = flip runRand gen $ runExceptT $ genSimState radius numBinders chain space
-    in case est of
-           Left _ -> generate gen' radius numBinders chain
-           Right st -> (st, gen')
+generate :: MonadRandom m => Int -> Int -> [Atom] -> m SimulationState
+generate radius numBinders chain = do
+    Right res <- iterateUntil isRight $ runExceptT $
+        genSimState radius numBinders chain space
+    return res
+  where
+    space = genSpace radius
 
-runSim :: StdGen -> Int -> SimulationState -> SimulationState
-runSim gen steps st = flip evalRand gen $ flip execStateT st $ replicateM_ steps simulateStep
+runSim :: MonadRandom m => Int -> SimulationState -> m SimulationState
+runSim steps st = flip execStateT st $ replicateM_ steps simulateStep
 
 instance NFData SimulationState
 instance NFData Atom
@@ -45,14 +47,15 @@ runBench (gen, chain) (run, st) = defaultMain [
 main :: IO ()
 main = do
     let Input{..} = globalParams
-    let stg ran = generate ran inputRadius inputNumBinders
+    let stg = generate inputRadius inputNumBinders
     chain <- evaluate $ force $ loadChain inputChainLength inputLamins inputBinders
 
     chainRan <- newStdGen
-    let chainTest = (fst . stg chainRan, chain)
+    let chainTest = (flip evalRand chainRan . stg, chain)
+
     -- use different random generators for different tests
     stateRan <- newStdGen
-    let (st, ran) = stg stateRan chain
-    st' <- evaluate . force $ st
-    let runTest = (runSim ran (10^5), st')
+    st <- evaluate . force =<< evalRandIO (stg chain)
+    let runTest = (flip evalRand stateRan . runSim (10^5), st)
+
     runBench chainTest runTest
