@@ -30,11 +30,8 @@ generate gen radius numBinders chain =
 runSim :: StdGen -> Int -> SimulationState -> SimulationState
 runSim gen steps st = fst $ flip runRand gen $ flip execStateT st $ replicateM_ steps simulateStep
 
-instance NFData SimulationState where
-    rnf (SimulationState s bi be en gr) =
-        rnf s `seq` rnf bi `seq` rnf be `seq` rnf en `seq` rnf gr
+instance NFData SimulationState
 instance NFData Atom
-
 
 runBench :: ([Atom] -> SimulationState, [Atom])
          -> (SimulationState -> SimulationState, SimulationState)
