@@ -28,7 +28,7 @@ generate gen radius numBinders chain =
            Right st -> (st, gen')
 
 runSim :: StdGen -> Int -> SimulationState -> SimulationState
-runSim gen steps st = fst $ flip runRand gen $ flip execStateT st $ replicateM_ steps simulateStep
+runSim gen steps st = flip evalRand gen $ flip execStateT st $ replicateM_ steps simulateStep
 
 instance NFData SimulationState
 instance NFData Atom
