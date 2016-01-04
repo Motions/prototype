@@ -40,7 +40,7 @@ Or simply execute it from the directory containing the executable (the path may 
     
 To run the simulation we need an initial state. To initialize the simulation run it with the "init" command::
 
-    ./prototype init 
+    ./prototype init --help
 
 The detailed usage will be shown. Example initialization could be::
 
@@ -48,7 +48,7 @@ The detailed usage will be shown. Example initialization could be::
     
 Then you can use the output file as an input file to the "run" command. To show its usage::
 
-    ./prototype run
+    ./prototype run --help
     
 An example run::
 
