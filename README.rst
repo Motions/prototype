@@ -35,7 +35,7 @@ You can either use stack (if you used stack build)::
 
 Or simply execute it from the directory containing the executable (the path may vary a little)::
 
-    cd stack-work/dist/x86_64-linux/Cabal-1.22.4.0/build/prototype/
+    cd .stack-work/dist/x86_64-linux/Cabal-1.22.4.0/build/prototype/
     ./prototype arguments
     
 To run the simulation we need an initial state. To initialize the simulation run it with the "init" command::
