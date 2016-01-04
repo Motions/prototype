@@ -102,9 +102,9 @@ simulateParser = SimulateSettings
 
 parser :: Parser Settings
 parser = subparser
-    $  command "init" (info (Initialize <$> initializeParser)
+    $  command "init" (info (helper <*> (Initialize <$> initializeParser))
         (progDesc "Initialize the simulation"))
-    <> command "run" (info (Simulate <$> simulateParser)
+    <> command "run" (info (helper <*> (Simulate <$> simulateParser))
         (progDesc "Run the simulation"))
 
 makeInput :: InitializeSettings -> IO Input
